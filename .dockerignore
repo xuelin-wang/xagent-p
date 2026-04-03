@@ -1,0 +1,9 @@
+.git
+.idea
+.pytest_cache
+.uv-cache
+.venv
+.docker-build-test
+__pycache__
+*.pyc
+dist

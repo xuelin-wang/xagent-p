@@ -28,38 +28,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build]
 dev-mode-dirs = ["components", "bases", "development", "."]
-exclude = [
-    ".git",
-    ".idea",
-    ".pytest_cache",
-    ".uv-cache",
-    ".venv",
-    ".docker-build-test",
-    "__pycache__",
-    "*.pyc",
-]
-
-[tool.hatch.build.targets.wheel]
-packages = ["components/xagent", "bases/xagent"]
-
-[tool.hatch.build.targets.sdist]
-include = [
-    "/pyproject.toml",
-    "/README.md",
-    "/components",
-    "/bases",
-    "/development",
-]
-exclude = [
-    "/.git",
-    "/.idea",
-    "/.pytest_cache",
-    "/.uv-cache",
-    "/.venv",
-    "/.docker-build-test",
-    "/**/__pycache__",
-    "/**/*.pyc",
-]
 
 [tool.uv.build-backend]
 namespace = true
