@@ -1,0 +1,46 @@
+replicaCount: 1
+
+image:
+  repository: xagent-langchain-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+secret:
+  create: false
+  name: openai-api
+  openaiApiKey: ""
+  keys:
+    openaiApiKey: OPENAI_API_KEY
+
+appConfig:
+  fastapi:
+    cors:
+      allow_origins: []
+  host: 0.0.0.0
+  port: 8000
+  reload: false
+  openai_model: gpt-4.1-mini
+  openai_embedding_model: text-embedding-3-small
+  xagent_max_wait_seconds: 10.0
+
+externalSecret:
+  enabled: false
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: ""
+  target:
+    name: ""
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    openaiApiKey:
+      key: ""
+      property: ""
+      version: ""
+
+resources: {}

@@ -23,6 +23,7 @@ class RAGSubagent:
     answer_model: Any
     documents: list[Document]
     embedding_model: str = "text-embedding-3-small"
+    api_key: str | None = None
     name: str = "rag_researcher"
     description: str = (
         "Retrieves semantically similar documents and answers with grounded context."
@@ -32,7 +33,10 @@ class RAGSubagent:
     _chain: Any = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        embeddings = OpenAIEmbeddings(model=self.embedding_model)
+        embeddings = OpenAIEmbeddings(
+            model=self.embedding_model,
+            api_key=self.api_key,
+        )
         self._vector_store = InMemoryVectorStore(embeddings)
         self._vector_store.add_documents(self.documents)
         self._chain = ChatPromptTemplate.from_messages(

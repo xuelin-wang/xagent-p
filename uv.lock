@@ -838,6 +838,7 @@ dependencies = [
     { name = "langchain" },
     { name = "langchain-openai" },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "uvicorn" },
 ]
 
@@ -853,6 +854,7 @@ requires-dist = [
     { name = "langchain" },
     { name = "langchain-openai" },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "uvicorn" },
 ]
 

@@ -1,0 +1,48 @@
+replicaCount: 1
+
+image:
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+appConfig:
+  fastapi:
+    cors:
+      allow_origins: []
+  host: 0.0.0.0
+  port: 8000
+  reload: false
+  openai_model: gpt-4.1-mini
+  openai_embedding_model: text-embedding-3-small
+  xagent_max_wait_seconds: 10.0
+
+secret:
+  create: false
+  name: openai-api
+  keys:
+    openaiApiKey: OPENAI_API_KEY
+
+externalSecret:
+  enabled: true
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: team-secrets
+  target:
+    name: openai-api
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    openaiApiKey:
+      key: xagent/dev/langchain-service
+      property: OPENAI_API_KEY
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

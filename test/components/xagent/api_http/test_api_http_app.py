@@ -14,7 +14,7 @@ def test_health_endpoint_exists():
 
 
 def test_query_returns_502_when_openai_authentication_fails(monkeypatch):
-    def raise_authentication_error():
+    def raise_authentication_error(_config):
         request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
         response = httpx.Response(401, request=request)
         raise AuthenticationError(

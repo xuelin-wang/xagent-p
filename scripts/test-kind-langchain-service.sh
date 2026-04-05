@@ -5,7 +5,9 @@ CLUSTER_NAME="${CLUSTER_NAME:-xagent}"
 NAMESPACE="${NAMESPACE:-xagent}"
 APP_NAME="${APP_NAME:-langchain-service}"
 IMAGE_NAME="${IMAGE_NAME:-xagent-langchain-service:latest}"
-KUSTOMIZE_DIR="${KUSTOMIZE_DIR:-deploy/langchain-service}"
+HELM_CHART_DIR="${HELM_CHART_DIR:-deploy/langchain-service}"
+HELM_RELEASE_NAME="${HELM_RELEASE_NAME:-langchain-service}"
+HELM_VALUES_FILE="${HELM_VALUES_FILE:-deploy/langchain-service/values-kind.yaml}"
 DOCKERFILE_PATH="${DOCKERFILE_PATH:-projects/langchain_service/Dockerfile}"
 LOCAL_PORT="${LOCAL_PORT:-8000}"
 SERVICE_PORT="${SERVICE_PORT:-80}"
@@ -45,6 +47,7 @@ trap 'print_failure_context' ERR
 require_cmd docker
 require_cmd kind
 require_cmd kubectl
+require_cmd helm
 require_cmd curl
 
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then
@@ -59,13 +62,15 @@ fi
 docker build -t "${IMAGE_NAME}" -f "${DOCKERFILE_PATH}" .
 kind load docker-image "${IMAGE_NAME}" --name "${CLUSTER_NAME}"
 
-kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
-kubectl create secret generic openai-api \
-  -n "${NAMESPACE}" \
-  --from-literal=OPENAI_API_KEY="${OPENAI_API_KEY}" \
-  --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade --install "${HELM_RELEASE_NAME}" "${HELM_CHART_DIR}" \
+  --namespace "${NAMESPACE}" \
+  --create-namespace \
+  -f "${HELM_VALUES_FILE}" \
+  --set image.repository="${IMAGE_NAME%:*}" \
+  --set image.tag="${IMAGE_NAME##*:}" \
+  --set secret.name=openai-api \
+  --set secret.openaiApiKey="${OPENAI_API_KEY}"
 
-kubectl apply -k "${KUSTOMIZE_DIR}"
 kubectl rollout status deployment/"${APP_NAME}" -n "${NAMESPACE}" --timeout=180s
 
 kubectl port-forward -n "${NAMESPACE}" svc/"${APP_NAME}" "${LOCAL_PORT}:${SERVICE_PORT}" \

@@ -1,6 +1,6 @@
 import argparse
 import asyncio
-import os
+import sys
 
 from langchain_openai import ChatOpenAI
 
@@ -9,6 +9,15 @@ from xagent.langchain_agents.corpus import build_sample_documents
 from xagent.langchain_agents.merge import LangChainResponseMerger
 from xagent.langchain_agents.planner import LangChainPlanner
 from xagent.langchain_agents.subagents import RAGSubagent
+from xagent.config import StrictConfigModel
+from xagent.runtime_config import load_runtime_config
+
+
+class CliConfig(StrictConfigModel):
+    openai_model: str = "gpt-4.1-mini"
+    openai_embedding_model: str = "text-embedding-3-small"
+    xagent_max_wait_seconds: float = 10.0
+    openai_api_key: str | None = None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -17,22 +26,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("query", help="User query to answer.")
     parser.add_argument(
-        "--model",
-        default=os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"),
-        help="OpenAI chat model name for the planner and merger.",
-    )
-    parser.add_argument(
-        "--embedding-model",
-        default=os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
-        help="OpenAI embedding model used by the RAG subagent.",
-    )
-    parser.add_argument(
-        "--max-wait-seconds",
-        type=float,
-        default=10.0,
-        help="Maximum total wait time for all subagents.",
-    )
-    parser.add_argument(
         "--show-plan",
         action="store_true",
         help="Print planner output and subagent statuses before the final reply.",
@@ -40,20 +33,33 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def _run(args: argparse.Namespace) -> int:
-    planner_model = ChatOpenAI(model=args.model, temperature=0)
-    merger_model = ChatOpenAI(model=args.model, temperature=0.2)
+async def _run(args: argparse.Namespace, config: CliConfig) -> int:
+    planner_model = ChatOpenAI(
+        model=config.openai_model,
+        temperature=0,
+        api_key=config.openai_api_key,
+    )
+    merger_model = ChatOpenAI(
+        model=config.openai_model,
+        temperature=0.2,
+        api_key=config.openai_api_key,
+    )
     rag_subagent = RAGSubagent(
-        answer_model=ChatOpenAI(model=args.model, temperature=0),
+        answer_model=ChatOpenAI(
+            model=config.openai_model,
+            temperature=0,
+            api_key=config.openai_api_key,
+        ),
         documents=build_sample_documents(),
-        embedding_model=args.embedding_model,
+        embedding_model=config.openai_embedding_model,
+        api_key=config.openai_api_key,
     )
     subagents = {rag_subagent.name: rag_subagent}
     app = LangChainMultiAgentApp(
         planner=LangChainPlanner(planner_model, subagents),
         merger=LangChainResponseMerger(merger_model),
         subagents=subagents,
-        max_wait_seconds=args.max_wait_seconds,
+        max_wait_seconds=config.xagent_max_wait_seconds,
     )
     result = await app.arun(args.query)
     if args.show_plan:
@@ -69,8 +75,9 @@ async def _run(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    args = build_parser().parse_args()
-    return asyncio.run(_run(args))
+    config, remaining_args = load_runtime_config(CliConfig, sys.argv[1:])
+    args = build_parser().parse_args(remaining_args)
+    return asyncio.run(_run(args, config))
 
 
 if __name__ == "__main__":
