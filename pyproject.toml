@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi",
+    "httpx",
     "langchain",
     "langchain-openai",
     "pydantic",
@@ -16,6 +17,7 @@ dependencies = [
 [project.scripts]
 xagent-langchain-api = "xagent.api_http.main:main"
 xagent-langchain-sample = "xagent.langchain_cli.main:main"
+xagent-llm = "xagent.llm_cli.main:main"
 
 [dependency-groups]
 dev = [
@@ -66,3 +68,8 @@ exclude = [
 namespace = true
 module-name = "xagent"
 module-root = ""
+
+[tool.pytest.ini_options]
+markers = [
+    "require_env: tests that require real provider credentials or external services",
+]

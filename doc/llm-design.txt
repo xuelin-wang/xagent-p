@@ -1,0 +1,446 @@
+Design Document: Pluggable Common LLM Wrapper for xagent-p
+1. Purpose
+Implement a reusable, provider-pluggable LLM wrapper inside the existing xagent-p repository.
+Initial supported providers:
+openaianthropic
+Initial supported model families:
+OpenAI:  gpt-5.5  gpt-5.4  gpt-5.4-miniOpenAI embeddings:  text-embedding-3-small  text-embedding-3-largeAnthropic:  claude-opus-4-7  claude-sonnet-4-6  claude-haiku-4-5-20251001
+OpenAI’s current model docs recommend gpt-5.5 as the starting point for complex reasoning and coding, with smaller variants such as gpt-5.4-mini for lower-cost and lower-latency workloads. The docs also list function tools, web search, file search, and computer use as supported tools for recent OpenAI models.  Anthropic’s current model docs list Claude Opus 4.7, Claude Sonnet 4.6, and Claude Haiku 4.5 as latest models, with Claude API IDs claude-opus-4-7, claude-sonnet-4-6, and claude-haiku-4-5-20251001. 
+The wrapper must support:
+1. Text generation2. Structured / formatted output3. Embeddings, OpenAI only initially4. File upload and file references5. App-hosted tool calls6. Provider-hosted tool calls7. Batch requests8. Retry, timeout, and error normalization9. Provider plugin architecture
+The design must follow the existing Polylith convention used in this repo: namespace xagent, loose Polylith layout, top-level components/, bases/, projects/, and development/. The repo’s workspace.toml declares namespace xagent and loose structure, and the root pyproject.toml builds packages from components/xagent and bases/xagent.  
+
+2. Non-goals for Initial Implementation
+Do not implement these initially:
+1. Gemini2. Vertex AI Gemini3. DeepSeek4. Azure OpenAI5. Bedrock Anthropic6. Streaming7. Realtime APIs8. Audio input/output9. Image generation10. Fine-tuning11. Automatic vector store lifecycle management12. Full MCP client/server implementation13. Automatic execution of app-hosted tools inside the low-level provider wrapper
+The design must still preserve a plugin architecture so these providers/features can be added later.
+
+3. Key Design Rule
+Normalize the common surface area, but do not hide important provider differences.
+Use this rule throughout the implementation:
+Normalize request/response shape.Preserve raw provider responses.Capability-gate provider-specific features.Fail loudly when unsupported.Never silently emulate one provider’s behavior with another provider’s behavior.
+Examples:
+- Do not use OpenAI embeddings automatically for Anthropic requests.- Do not emulate provider-hosted web search with an app-hosted search tool unless explicitly requested by the caller.- Do not assume OpenAI and Anthropic file APIs have the same semantics.- Do not assume provider-hosted tools and app-hosted tools follow the same execution model.
+
+4. Polylith Package Layout
+Implement the wrapper as Polylith bricks under the existing xagent namespace.
+components/  xagent/    llm_contracts/      __init__.py      types.py      errors.py      capabilities.py      usage.py    llm_config/      __init__.py      settings.py      auth.py    llm_retry/      __init__.py      retry.py      timeout.py    llm_files/      __init__.py      models.py      upload.py    llm_tools/      __init__.py      app_tools.py      provider_tools.py      tool_loop.py      validation.py    llm_structured/      __init__.py      response_format.py      validation.py    llm_batch/      __init__.py      models.py      concurrent.py      polling.py    llm_registry/      __init__.py      provider_protocol.py      registry.py      factory.py    llm_provider_openai/      __init__.py      provider.py      mapping.py      files.py      batch.py      embeddings.py    llm_provider_anthropic/      __init__.py      provider.py      mapping.py      files.py      batch.pybases/  xagent/    llm_cli/      __init__.py      main.pydevelopment/  llm_sandbox.pytest/  components/    xagent/      llm_contracts/        test_types.py        test_errors.py        test_capabilities.py      llm_config/        test_settings.py        test_auth.py      llm_retry/        test_retry.py        test_timeout.py      llm_files/        test_file_models.py      llm_tools/        test_app_tools.py        test_provider_tools.py        test_tool_loop.py        test_validation.py      llm_structured/        test_response_format.py        test_structured_validation.py      llm_batch/        test_models.py        test_concurrent.py        test_polling.py      llm_registry/        test_registry.py        test_factory.py      llm_provider_openai/        test_mapping.py        test_files.py        test_batch.py        test_embeddings.py      llm_provider_anthropic/        test_mapping.py        test_files.py        test_batch.py  bases/    xagent/      llm_cli/        test_main.py
+Do not use src/common_llm. This repo builds from components/xagent and bases/xagent.
+
+5. Dependencies
+The root pyproject.toml already includes pydantic, pytest, and polylith-cli. 
+Add only what is needed:
+dependencies = [    "httpx",    "pydantic",    "pyyaml",][dependency-groups]dev = [    "pytest",    "pytest-asyncio",    "respx",    "ruff",]
+The repo currently requires Python >=3.14, so new code should not target older Python versions. 
+
+6. Component Responsibilities
+6.1 xagent.llm_contracts
+Provider-independent request/response contracts and errors.
+Files:
+types.pyerrors.pycapabilities.pyusage.py
+This component must not import OpenAI or Anthropic provider components.
+Core message types
+from enum import Enumfrom typing import Any, Literalfrom pydantic import BaseModel, Fieldclass Role(str, Enum):    SYSTEM = "system"    USER = "user"    ASSISTANT = "assistant"    TOOL = "tool"class TextPart(BaseModel):    type: Literal["text"] = "text"    text: strclass Message(BaseModel):    role: Role    content: str | list[TextPart]    name: str | None = None    tool_call_id: str | None = None
+Usage model
+class Usage(BaseModel):    input_tokens: int | None = None    output_tokens: int | None = None    total_tokens: int | None = None    raw: dict[str, Any] | None = None
+Generate request/response
+class GenerateRequest(BaseModel):    model: str | None = None    messages: list[Message]    temperature: float | None = None    max_output_tokens: int | None = None    stop: list[str] | None = None    files: list["FileInput"] = Field(default_factory=list)    app_tools: list["AppToolDefinition"] = Field(default_factory=list)    provider_tools: list["ProviderHostedTool"] = Field(default_factory=list)    tool_choice: "ToolChoice" | None = None    response_format: "ResponseFormat" | None = None    metadata: dict[str, str] = Field(default_factory=dict)
+class GenerateResponse(BaseModel):    provider: str    model: str    text: str | None = None    app_tool_calls: list["AppToolCall"] = Field(default_factory=list)    provider_tool_traces: list["ProviderToolTrace"] = Field(default_factory=list)    files: list["GeneratedFile"] = Field(default_factory=list)    finish_reason: str | None = None    usage: Usage | None = None    raw_response: dict[str, Any] | None = None
+Because these types reference types from other components, use either forward references or move all purely shared types into llm_contracts. Avoid circular imports.
+Capabilities
+class Capability(str, Enum):    TEXT_GENERATION = "text_generation"    STRUCTURED_OUTPUT = "structured_output"    APP_TOOL_CALLS = "app_tool_calls"    PROVIDER_HOSTED_TOOLS = "provider_hosted_tools"    MIXED_APP_AND_PROVIDER_TOOLS = "mixed_app_and_provider_tools"    FILE_UPLOAD = "file_upload"    FILE_INPUT = "file_input"    EMBEDDINGS = "embeddings"    NATIVE_BATCH = "native_batch"    CONCURRENT_BATCH = "concurrent_batch"
+class ModelCapabilities(BaseModel):    provider: str    model: str    capabilities: set[Capability]    provider_tools: set[str] = Field(default_factory=set)    max_files_per_request: int | None = None    max_file_size_bytes: int | None = None    notes: str | None = None
+Error hierarchy
+class LLMErrorPayload(BaseModel):    provider: str    model: str | None = None    operation: str    status_code: int | None = None    request_id: str | None = None    retryable: bool = False    message: str    raw_error: dict[str, Any] | None = Noneclass LLMError(Exception):    def __init__(self, payload: LLMErrorPayload):        super().__init__(payload.message)        self.payload = payloadclass AuthenticationError(LLMError): ...class PermissionDeniedError(LLMError): ...class RateLimitError(LLMError): ...class ProviderServerError(LLMError): ...class ProviderTimeoutError(LLMError): ...class InvalidRequestError(LLMError): ...class UnsupportedCapabilityError(LLMError): ...class StructuredOutputValidationError(LLMError): ...class AppToolCallValidationError(LLMError): ...class ToolLoopExceededError(LLMError): ...class FileUploadError(LLMError): ...class BatchJobError(LLMError): ...
+
+7. Configuration Component
+7.1 xagent.llm_config
+Files:
+settings.pyauth.py
+Provider config
+from typing import Literalfrom pydantic import BaseModel, SecretStr, Fieldclass TimeoutConfig(BaseModel):    connect: float = 10.0    read: float = 120.0    write: float = 30.0    pool: float = 10.0class RetryConfig(BaseModel):    enabled: bool = True    max_attempts: int = 3    initial_delay_seconds: float = 0.5    max_delay_seconds: float = 20.0    multiplier: float = 2.0    jitter: bool = True    respect_retry_after: bool = Trueclass PollingConfig(BaseModel):    initial_interval_seconds: float = 2.0    max_interval_seconds: float = 60.0    timeout_seconds: float | None = Noneclass ProviderConfig(BaseModel):    provider: Literal["openai", "anthropic"]    default_model: str    api_key: SecretStr | None = None    api_key_env: str | None = None    base_url: str | None = None    timeout: TimeoutConfig = Field(default_factory=TimeoutConfig)    retry: RetryConfig = Field(default_factory=RetryConfig)    polling: PollingConfig = Field(default_factory=PollingConfig)
+Default environment variables
+OPENAI_API_KEYANTHROPIC_API_KEY
+Auth behavior:
+OpenAI:  Authorization: Bearer <api_key>Anthropic:  x-api-key: <api_key>  anthropic-version: 2023-06-01
+
+8. Retry Component
+8.1 xagent.llm_retry
+Files:
+retry.pytimeout.py
+Retry these by default:
+HTTP 408HTTP 409, only if provider marks transientHTTP 429HTTP 500HTTP 502HTTP 503HTTP 504network timeoutconnection resettemporary DNS failure
+Do not retry these by default:
+HTTP 400HTTP 401HTTP 403HTTP 404schema validation failure after configured validation retriesapp tool execution failureside-effecting operation without idempotency key
+Implementation requirements:
+1. Respect Retry-After when present.2. Otherwise use exponential backoff.3. Add jitter when configured.4. Stop at max_attempts.5. Preserve provider request ID in normalized errors when available.6. Never log API keys.
+
+9. Files Component
+9.1 xagent.llm_files
+Files:
+models.pyupload.py
+File handling must separate local data, provider-uploaded files, URLs, and cloud references.
+from typing import Annotated, Literalfrom enum import Enumfrom datetime import datetimefrom pydantic import BaseModel, Fieldclass LocalFileSource(BaseModel):    type: Literal["local_path"] = "local_path"    path: str    media_type: str | None = Noneclass BytesFileSource(BaseModel):    type: Literal["bytes"] = "bytes"    filename: str    data: bytes    media_type: str | None = Noneclass UrlFileSource(BaseModel):    type: Literal["url"] = "url"    url: str    media_type: str | None = Noneclass ProviderFileRef(BaseModel):    type: Literal["provider_file"] = "provider_file"    provider: str    file_id: str    media_type: str | None = None    filename: str | None = Noneclass CloudFileRef(BaseModel):    type: Literal["cloud_file"] = "cloud_file"    uri: str    media_type: str | None = NoneFileSource = Annotated[    LocalFileSource | BytesFileSource | UrlFileSource | ProviderFileRef | CloudFileRef,    Field(discriminator="type"),]
+class FilePurpose(str, Enum):    PROMPT_INPUT = "prompt_input"    PROVIDER_FILE_SEARCH = "provider_file_search"    BATCH_INPUT = "batch_input"    BATCH_OUTPUT = "batch_output"    CODE_EXECUTION_INPUT = "code_execution_input"class FileInput(BaseModel):    source: FileSource    purpose: FilePurpose = FilePurpose.PROMPT_INPUT    name: str | None = None    description: str | None = Noneclass FileUploadRequest(BaseModel):    source: LocalFileSource | BytesFileSource    purpose: FilePurpose    metadata: dict[str, str] = Field(default_factory=dict)class UploadedFile(BaseModel):    provider: str    file_id: str    filename: str | None = None    media_type: str | None = None    size_bytes: int | None = None    purpose: FilePurpose    expires_at: datetime | None = None    raw_response: dict | None = Noneclass FileDeleteRequest(BaseModel):    provider: str    file_id: strclass GeneratedFile(BaseModel):    provider: str    file_id: str | None = None    filename: str | None = None    media_type: str | None = None    bytes_data: bytes | None = None    raw: dict | None = None
+OpenAI file inputs can be provided through base64, provider file IDs from /v1/files, or external URLs for PDF input.  Anthropic’s Files API lets callers upload and manage files to avoid repeated upload, but Anthropic documents it as beta and notes it is not supported on Bedrock or Vertex AI. 
+
+10. Tools Component
+10.1 xagent.llm_tools
+Files:
+app_tools.pyprovider_tools.pytool_loop.pyvalidation.py
+There are two separate tool baskets:
+app_tools:  Tools the application executes.provider_tools:  Tools the model provider executes.
+Anthropic explicitly documents this distinction as client tools versus server tools: client tools are executed by your system, while server tools are executed by Anthropic.  OpenAI similarly distinguishes custom function tools from hosted tools such as web search, file search, code interpreter, image generation, and computer use. 
+App-hosted tools
+class AppToolDefinition(BaseModel):    name: str    description: str    input_schema: dict[str, Any]class AppToolCall(BaseModel):    id: str    name: str    arguments: dict[str, Any]class AppToolResult(BaseModel):    tool_call_id: str    name: str    result: Any    is_error: bool = False
+Provider-hosted tools
+class ProviderHostedTool(BaseModel):    type: str    name: str | None = None    config: dict[str, Any] = Field(default_factory=dict)class Citation(BaseModel):    title: str | None = None    url: str | None = None    file_id: str | None = None    quote: str | None = None    metadata: dict[str, Any] = Field(default_factory=dict)class ProviderToolTrace(BaseModel):    tool_type: str    name: str | None = None    status: str | None = None    input_summary: str | None = None    output_summary: str | None = None    citations: list[Citation] = Field(default_factory=list)    raw: dict[str, Any] | None = None
+Tool choice
+class ToolChoice(BaseModel):    mode: Literal["auto", "none", "required"] = "auto"    tool_name: str | None = None
+Tool execution policy
+The low-level provider wrappers must not execute app-hosted tools automatically. They should only return normalized AppToolCall objects.
+Add an optional helper:
+class AppToolExecutor(Protocol):    async def __call__(self, arguments: dict[str, Any]) -> Any:        ...async def run_app_tool_loop(    provider: LLMProvider,    request: GenerateRequest,    executors: dict[str, AppToolExecutor],    max_rounds: int = 5,) -> GenerateResponse:    ...
+Tool loop behavior:
+1. Send request.2. If response has no app_tool_calls, return response.3. Validate arguments against input_schema.4. Execute app tools.5. Append tool result messages.6. Repeat until final answer or max_rounds.7. Never blindly retry side-effecting tool execution.
+
+11. Structured Output Component
+11.1 xagent.llm_structured
+Files:
+response_format.pyvalidation.py
+from enum import Enumfrom typing import Any, Generic, TypeVarfrom pydantic import BaseModelT = TypeVar("T")class ResponseFormatType(str, Enum):    TEXT = "text"    JSON_OBJECT = "json_object"    JSON_SCHEMA = "json_schema"class ResponseFormat(BaseModel):    type: ResponseFormatType = ResponseFormatType.TEXT    schema_name: str | None = None    json_schema: dict[str, Any] | None = None    strict: bool = Trueclass StructuredGenerateRequest(GenerateRequest):    response_format: ResponseFormat    validation_retries: int = 1class StructuredGenerateResponse(BaseModel, Generic[T]):    provider: str    model: str    data: T    raw_json: dict[str, Any]    usage: Usage | None = None    raw_response: dict[str, Any] | None = None
+Structured output behavior:
+1. Convert Pydantic output model to JSON Schema.2. Use provider-native structured output where available.3. Parse output as JSON.4. Validate locally with Pydantic.5. If validation fails, retry once with validation error context.6. Raise StructuredOutputValidationError if still invalid.
+OpenAI docs recommend Structured Outputs instead of describing schemas in prompts for GPT-5.5 workflows.  For Anthropic, implement strict structured output initially by using tool-style extraction and local Pydantic validation.
+
+12. Embeddings Component
+OpenAI only for initial implementation.
+class EmbeddingRequest(BaseModel):    model: str | None = None    inputs: list[str]    dimensions: int | None = None    metadata: dict[str, str] = Field(default_factory=dict)class EmbeddingVector(BaseModel):    index: int    embedding: list[float]class EmbeddingResponse(BaseModel):    provider: str    model: str    vectors: list[EmbeddingVector]    dimensions: int    usage: Usage | None = None    raw_response: dict[str, Any] | None = None
+Supported OpenAI embedding models:
+text-embedding-3-smalltext-embedding-3-large
+OpenAI documents text-embedding-3-small and text-embedding-3-large as its newer third-generation embedding models, with default vector sizes of 1536 and 3072 respectively and a configurable dimensions parameter. 
+Anthropic embeddings should raise:
+UnsupportedCapabilityError(    LLMErrorPayload(        provider="anthropic",        operation="embed",        message="Anthropic embeddings are not supported by this wrapper.",        retryable=False,    ))
+Do not silently route Anthropic embedding requests to OpenAI. Mixing embedding spaces can break retrieval.
+
+13. Batch Component
+13.1 xagent.llm_batch
+Files:
+models.pyconcurrent.pypolling.py
+Support two batch modes:
+1. concurrent batch2. provider-native batch
+Concurrent batch
+Concurrent batch sends multiple normal API calls concurrently using asyncio.
+class ConcurrentBatchRequest(BaseModel):    requests: list[GenerateRequest]    max_concurrency: int = 8    fail_fast: bool = Falseclass ConcurrentBatchResult(BaseModel):    index: int    custom_id: str | None = None    response: GenerateResponse | None = None    error: LLMErrorPayload | None = Noneasync def generate_many(    provider: LLMProvider,    batch: ConcurrentBatchRequest,) -> list[ConcurrentBatchResult]:    ...
+Provider-native batch
+Provider-native batch creates an asynchronous provider job.
+class BatchRequestItem(BaseModel):    custom_id: str    request: GenerateRequest | StructuredGenerateRequest | EmbeddingRequestclass BatchCreateRequest(BaseModel):    model: str | None = None    items: list[BatchRequestItem]    mode: Literal["native", "concurrent"] = "native"    input_file: FileInput | None = None    metadata: dict[str, str] = Field(default_factory=dict)
+class BatchStatus(str, Enum):    VALIDATING = "validating"    QUEUED = "queued"    RUNNING = "running"    SUCCEEDED = "succeeded"    FAILED = "failed"    CANCELLED = "cancelled"    EXPIRED = "expired"class BatchJob(BaseModel):    provider: str    batch_id: str    status: BatchStatus    created_at: datetime | None = None    completed_at: datetime | None = None    request_counts: dict[str, int] = Field(default_factory=dict)    metadata: dict[str, str] = Field(default_factory=dict)    raw_response: dict[str, Any] | None = Noneclass BatchResultItem(BaseModel):    custom_id: str    response: GenerateResponse | StructuredGenerateResponse[Any] | EmbeddingResponse | None = None    error: LLMErrorPayload | None = None    raw: dict[str, Any] | None = Noneclass BatchResults(BaseModel):    provider: str    batch_id: str    status: BatchStatus    items: list[BatchResultItem]    raw_response: dict[str, Any] | None = None
+OpenAI’s Batch API processes jobs asynchronously from an uploaded JSONL file and supports endpoints including /v1/responses, /v1/chat/completions, /v1/embeddings, /v1/completions, and /v1/moderations; /v1/embeddings batches have an additional limit of 50,000 embedding inputs across all requests.  Anthropic’s Message Batches API creates batches of Message API requests, supports features available in the Messages API, and accepts up to 100,000 requests with a total batch size up to 256 MB. 
+
+14. Provider Registry Component
+14.1 xagent.llm_registry
+Files:
+provider_protocol.pyregistry.pyfactory.py
+Provider protocol
+from typing import Protocol, TypeVarT = TypeVar("T")class LLMProvider(Protocol):    provider_name: str    def capabilities(self, model: str | None = None) -> ModelCapabilities:        ...    async def generate(self, request: GenerateRequest) -> GenerateResponse:        ...    async def generate_structured(        self,        request: StructuredGenerateRequest,        output_type: type[T],    ) -> StructuredGenerateResponse[T]:        ...    async def embed(self, request: EmbeddingRequest) -> EmbeddingResponse:        ...    async def upload_file(self, request: FileUploadRequest) -> UploadedFile:        ...    async def delete_file(self, request: FileDeleteRequest) -> None:        ...    async def create_batch(self, request: BatchCreateRequest) -> BatchJob:        ...    async def get_batch(self, batch_id: str) -> BatchJob:        ...    async def cancel_batch(self, batch_id: str) -> BatchJob:        ...    async def get_batch_results(self, batch_id: str) -> BatchResults:        ...
+Registry
+class ProviderRegistry:    def __init__(self) -> None:        self._providers: dict[str, type[LLMProvider]] = {}    def register(self, name: str, provider_cls: type[LLMProvider]) -> None:        self._providers[name] = provider_cls    def create(self, name: str, config: ProviderConfig) -> LLMProvider:        try:            provider_cls = self._providers[name]        except KeyError:            raise ValueError(f"Unknown LLM provider: {name}")        return provider_cls(config)    def list_providers(self) -> list[str]:        return sorted(self._providers)
+Default registry
+def default_registry() -> ProviderRegistry:    from xagent.llm_provider_openai import OpenAIProvider    from xagent.llm_provider_anthropic import AnthropicProvider    registry = ProviderRegistry()    registry.register("openai", OpenAIProvider)    registry.register("anthropic", AnthropicProvider)    return registry
+Factory
+class LLMClientFactory:    def __init__(self, registry: ProviderRegistry | None = None):        self.registry = registry or default_registry()    def create(self, config: ProviderConfig) -> LLMProvider:        return self.registry.create(config.provider, config)    def from_env(        self,        provider: str,        model: str | None = None,    ) -> LLMProvider:        ...
+
+15. OpenAI Provider Component
+15.1 xagent.llm_provider_openai
+Files:
+provider.pymapping.pyfiles.pybatch.pyembeddings.py
+Use OpenAI Responses API as the primary generation surface. OpenAI describes Responses as the advanced interface for generating model responses, supporting text/image inputs, text outputs, built-in tools, file search, web search, computer use, and function calling. 
+Supported OpenAI models
+OPENAI_TEXT_MODELS = {    "gpt-5.5",    "gpt-5.4",    "gpt-5.4-mini",}OPENAI_EMBEDDING_MODELS = {    "text-embedding-3-small",    "text-embedding-3-large",}
+Default:
+default_model = "gpt-5.5"default_embedding_model = "text-embedding-3-small"
+Capabilities
+ModelCapabilities(    provider="openai",    model="gpt-5.5",    capabilities={        Capability.TEXT_GENERATION,        Capability.STRUCTURED_OUTPUT,        Capability.APP_TOOL_CALLS,        Capability.PROVIDER_HOSTED_TOOLS,        Capability.MIXED_APP_AND_PROVIDER_TOOLS,        Capability.FILE_UPLOAD,        Capability.FILE_INPUT,        Capability.EMBEDDINGS,        Capability.NATIVE_BATCH,        Capability.CONCURRENT_BATCH,    },    provider_tools={        "web_search",        "file_search",        "code_interpreter",        "computer_use",    },)
+OpenAI provider responsibilities
+1. Map GenerateRequest to Responses API request.2. Map Message objects to OpenAI input items.3. Map app_tools to OpenAI function tools.4. Map provider_tools to OpenAI hosted tools.5. Map response_format to OpenAI Structured Outputs.6. Parse output text.7. Parse function calls into AppToolCall.8. Parse hosted tool traces where available.9. Upload files through OpenAI Files API.10. Support file input by file ID, URL, or inline data where supported.11. Implement embeddings.12. Implement native Batch API.13. Normalize errors.14. Preserve raw_response.
+OpenAI batch implementation
+1. Convert BatchRequestItem objects to JSONL.2. Upload JSONL with purpose=batch.3. Create batch against /v1/responses or /v1/embeddings.4. Poll batch status.5. Download output file and error file.6. Normalize each record to BatchResultItem.
+
+16. Anthropic Provider Component
+16.1 xagent.llm_provider_anthropic
+Files:
+provider.pymapping.pyfiles.pybatch.py
+Use Anthropic Messages API as the generation surface.
+Supported Anthropic models
+ANTHROPIC_TEXT_MODELS = {    "claude-opus-4-7",    "claude-sonnet-4-6",    "claude-haiku-4-5-20251001",}
+Default:
+default_model = "claude-sonnet-4-6"
+Capabilities
+ModelCapabilities(    provider="anthropic",    model="claude-sonnet-4-6",    capabilities={        Capability.TEXT_GENERATION,        Capability.STRUCTURED_OUTPUT,        Capability.APP_TOOL_CALLS,        Capability.PROVIDER_HOSTED_TOOLS,        Capability.MIXED_APP_AND_PROVIDER_TOOLS,        Capability.FILE_UPLOAD,        Capability.FILE_INPUT,        Capability.NATIVE_BATCH,        Capability.CONCURRENT_BATCH,    },    provider_tools={        "web_search",        "code_execution",    },)
+Anthropic current features include batch processing, Files API, PDF support, tool use, web search, code execution, and other tools, with some features marked beta. 
+Anthropic provider responsibilities
+1. Map GenerateRequest to Messages API request.2. Convert system messages to Anthropic system parameter.3. Map app_tools to Anthropic client tools.4. Map provider_tools to Anthropic server tools.5. Parse content blocks into text and tool calls.6. Parse tool_use blocks into AppToolCall.7. Parse server tool activity into ProviderToolTrace where available.8. Support file upload through Anthropic Files API.9. Support file references in messages where supported.10. Implement structured output via tool-style extraction and local Pydantic validation.11. Implement native Message Batches API.12. Return UnsupportedCapabilityError for embeddings.13. Normalize errors.14. Preserve raw_response.
+Anthropic batch implementation
+1. Convert BatchRequestItem objects into Anthropic Messages API params.2. Create Message Batch.3. Poll batch status.4. Fetch batch results.5. Normalize success/error records to BatchResultItem.
+
+17. Capability Checks
+Every provider must capability-check before sending a request.
+def assert_capability(    capabilities: ModelCapabilities,    capability: Capability,) -> None:    if capability not in capabilities.capabilities:        raise UnsupportedCapabilityError(            LLMErrorPayload(                provider=capabilities.provider,                model=capabilities.model,                operation="capability_check",                message=f"Capability {capability} is not supported.",                retryable=False,            )        )
+Required checks:
+if request.app_tools:    assert_capability(caps, Capability.APP_TOOL_CALLS)if request.provider_tools:    assert_capability(caps, Capability.PROVIDER_HOSTED_TOOLS)if request.app_tools and request.provider_tools:    assert_capability(caps, Capability.MIXED_APP_AND_PROVIDER_TOOLS)if request.files:    assert_capability(caps, Capability.FILE_INPUT)if request.response_format and request.response_format.type != ResponseFormatType.TEXT:    assert_capability(caps, Capability.STRUCTURED_OUTPUT)
+
+18. Logging and Observability
+Log structured metadata only.
+Allowed by default:
+providermodeloperationlatency_msretry_countstatus_coderequest_idinput token countoutput token counttotal token countnumber of app tool callsnumber of provider tool tracesbatch_idbatch status
+Do not log by default:
+API keysraw promptsraw responsestool result payloadsfile bytesembedding vectorsfull documents
+Allow opt-in debug logging for local development only.
+
+19. Optional CLI Base
+19.1 bases/xagent/llm_cli
+Files:
+main.py
+Add an optional CLI for local testing.
+Commands:
+xagent-llm textxagent-llm structuredxagent-llm embedxagent-llm upload-filexagent-llm create-batchxagent-llm get-batchxagent-llm batch-results
+Add script entry only if implementing CLI:
+[project.scripts]xagent-llm = "xagent.llm_cli.main:main"
+Do not remove existing script entries.
+
+20. Example Usage
+20.1 Text generation
+from xagent.llm_config import ProviderConfigfrom xagent.llm_contracts import Message, Role, GenerateRequestfrom xagent.llm_registry import LLMClientFactoryclient = LLMClientFactory().create(    ProviderConfig(        provider="openai",        default_model="gpt-5.5",        api_key_env="OPENAI_API_KEY",    ))response = await client.generate(    GenerateRequest(        messages=[            Message(role=Role.USER, content="Explain z-score briefly.")        ]    ))print(response.text)
+20.2 Structured output
+from typing import Literalfrom pydantic import BaseModelfrom xagent.llm_structured import (    ResponseFormat,    ResponseFormatType,    StructuredGenerateRequest,)class TicketClassification(BaseModel):    category: Literal["bug", "feature", "question"]    severity: Literal["low", "medium", "high"]    confidence: floatresponse = await client.generate_structured(    StructuredGenerateRequest(        messages=[            Message(role=Role.USER, content="The app crashes when clicking Save.")        ],        response_format=ResponseFormat(            type=ResponseFormatType.JSON_SCHEMA,            schema_name="TicketClassification",            json_schema=TicketClassification.model_json_schema(),            strict=True,        ),    ),    output_type=TicketClassification,)print(response.data)
+20.3 File upload
+from xagent.llm_files import (    FileUploadRequest,    LocalFileSource,    FilePurpose,    FileInput,    ProviderFileRef,)uploaded = await client.upload_file(    FileUploadRequest(        source=LocalFileSource(            path="/tmp/manual.pdf",            media_type="application/pdf",        ),        purpose=FilePurpose.PROMPT_INPUT,    ))response = await client.generate(    GenerateRequest(        messages=[            Message(role=Role.USER, content="Summarize this manual.")        ],        files=[            FileInput(                source=ProviderFileRef(                    provider=uploaded.provider,                    file_id=uploaded.file_id,                    media_type=uploaded.media_type,                    filename=uploaded.filename,                ),                purpose=FilePurpose.PROMPT_INPUT,            )        ],    ))
+20.4 App-hosted tool call
+from xagent.llm_tools import AppToolDefinitionget_vehicle_history = AppToolDefinition(    name="get_vehicle_history",    description="Fetch vehicle repair history by VIN.",    input_schema={        "type": "object",        "properties": {            "vin": {"type": "string"}        },        "required": ["vin"],        "additionalProperties": False,    },)response = await client.generate(    GenerateRequest(        messages=[            Message(role=Role.USER, content="Check repair history for VIN 123.")        ],        app_tools=[get_vehicle_history],    ))for call in response.app_tool_calls:    print(call.name, call.arguments)
+20.5 Provider-hosted tool call
+from xagent.llm_tools import ProviderHostedToolresponse = await client.generate(    GenerateRequest(        messages=[            Message(role=Role.USER, content="Search the web and summarize the latest update.")        ],        provider_tools=[            ProviderHostedTool(type="web_search")        ],    ))print(response.text)print(response.provider_tool_traces)
+20.6 Native batch
+from xagent.llm_batch import BatchCreateRequest, BatchRequestItembatch = await client.create_batch(    BatchCreateRequest(        mode="native",        model="gpt-5.5",        items=[            BatchRequestItem(                custom_id="case-001",                request=GenerateRequest(                    messages=[                        Message(role=Role.USER, content="Classify this ticket: ...")                    ]                ),            ),            BatchRequestItem(                custom_id="case-002",                request=GenerateRequest(                    messages=[                        Message(role=Role.USER, content="Classify this ticket: ...")                    ]                ),            ),        ],    ))job = await client.get_batch(batch.batch_id)results = await client.get_batch_results(batch.batch_id)
+
+21. Import Rules
+Follow these rules strictly:
+Core components must not import provider components.Provider components may import:  xagent.llm_contracts  xagent.llm_config  xagent.llm_retry  xagent.llm_files  xagent.llm_tools  xagent.llm_structured  xagent.llm_batch  xagent.llm_registryllm_registry.provider_protocol must not import provider implementations.llm_registry.factory may import built-in provider implementations only inside default_registry().Bases may import components.Tests should mirror component paths under test/components/xagent.
+Bad:
+# Do not do this inside llm_contractsfrom xagent.llm_provider_openai import OpenAIProvider
+Good:
+# Provider imports shared contractsfrom xagent.llm_contracts import GenerateRequest, GenerateResponse
+
+22. Implementation Order for Codex
+Work one brick at a time. Do not start provider implementation before shared contracts compile and tests pass.
+Step 1: Add xagent.llm_contracts
+Create:
+components/xagent/llm_contracts/  __init__.py  types.py  errors.py  capabilities.py  usage.py
+Implement:
+RoleTextPartMessageUsageGenerateRequestGenerateResponseCapabilityModelCapabilitiesLLMErrorPayloadLLMError subclasses
+Add tests:
+test/components/xagent/llm_contracts/test_types.pytest/components/xagent/llm_contracts/test_errors.pytest/components/xagent/llm_contracts/test_capabilities.py
+Acceptance:
+pytest test/components/xagent/llm_contracts
+
+Step 2: Add xagent.llm_config
+Create:
+components/xagent/llm_config/  __init__.py  settings.py  auth.py
+Implement:
+ProviderConfigTimeoutConfigRetryConfigPollingConfigAPI key loading from explicit SecretStr or env var
+Add tests:
+test/components/xagent/llm_config/test_settings.pytest/components/xagent/llm_config/test_auth.py
+Acceptance:
+pytest test/components/xagent/llm_config
+
+Step 3: Add xagent.llm_retry
+Create:
+components/xagent/llm_retry/  __init__.py  retry.py  timeout.py
+Implement:
+retryable status classifierRetry-After parserexponential backoff helperhttpx timeout conversion
+Add tests:
+test/components/xagent/llm_retry/test_retry.pytest/components/xagent/llm_retry/test_timeout.py
+Acceptance:
+pytest test/components/xagent/llm_retry
+
+Step 4: Add xagent.llm_files
+Create:
+components/xagent/llm_files/  __init__.py  models.py  upload.py
+Implement:
+LocalFileSourceBytesFileSourceUrlFileSourceProviderFileRefCloudFileRefFileSourceFilePurposeFileInputFileUploadRequestUploadedFileFileDeleteRequestGeneratedFile
+Add tests:
+test/components/xagent/llm_files/test_file_models.py
+Acceptance:
+pytest test/components/xagent/llm_files
+
+Step 5: Add xagent.llm_tools
+Create:
+components/xagent/llm_tools/  __init__.py  app_tools.py  provider_tools.py  validation.py  tool_loop.py
+Implement:
+AppToolDefinitionAppToolCallAppToolResultProviderHostedToolCitationProviderToolTraceToolChoicetool argument validationrun_app_tool_loop
+Add tests:
+test/components/xagent/llm_tools/test_app_tools.pytest/components/xagent/llm_tools/test_provider_tools.pytest/components/xagent/llm_tools/test_validation.pytest/components/xagent/llm_tools/test_tool_loop.py
+Acceptance:
+pytest test/components/xagent/llm_tools
+
+Step 6: Add xagent.llm_structured
+Create:
+components/xagent/llm_structured/  __init__.py  response_format.py  validation.py
+Implement:
+ResponseFormatTypeResponseFormatStructuredGenerateRequestStructuredGenerateResponsePydantic validation helpervalidation retry helper
+Add tests:
+test/components/xagent/llm_structured/test_response_format.pytest/components/xagent/llm_structured/test_structured_validation.py
+Acceptance:
+pytest test/components/xagent/llm_structured
+
+Step 7: Add xagent.llm_batch
+Create:
+components/xagent/llm_batch/  __init__.py  models.py  concurrent.py  polling.py
+Implement:
+BatchRequestItemBatchCreateRequestBatchStatusBatchJobBatchResultItemBatchResultsConcurrentBatchRequestConcurrentBatchResultgenerate_manypolling helper
+Add tests:
+test/components/xagent/llm_batch/test_models.pytest/components/xagent/llm_batch/test_concurrent.pytest/components/xagent/llm_batch/test_polling.py
+Acceptance:
+pytest test/components/xagent/llm_batch
+
+Step 8: Add xagent.llm_registry
+Create:
+components/xagent/llm_registry/  __init__.py  provider_protocol.py  registry.py  factory.py
+Implement:
+LLMProvider protocolProviderRegistrydefault_registryLLMClientFactory
+For now, default_registry() can return an empty registry until provider components are implemented.
+Add tests:
+test/components/xagent/llm_registry/test_registry.pytest/components/xagent/llm_registry/test_factory.py
+Acceptance:
+pytest test/components/xagent/llm_registry
+
+Step 9: Add xagent.llm_provider_openai skeleton
+Create:
+components/xagent/llm_provider_openai/  __init__.py  provider.py  mapping.py  files.py  batch.py  embeddings.py
+Implement skeleton:
+OpenAIProvidermodel allowlistcapabilities()unsupported methods raise NotImplementedError initially
+Add tests for capabilities and model validation.
+Acceptance:
+pytest test/components/xagent/llm_provider_openai
+
+Step 10: Implement OpenAI text generation
+Implement:
+GenerateRequest -> Responses API payloadResponses API response -> GenerateResponseerror normalizationusage normalizationraw_response preservation
+Use mocked HTTP tests with respx.
+Acceptance:
+pytest test/components/xagent/llm_provider_openai/test_mapping.py
+
+Step 11: Implement OpenAI structured output
+Implement:
+ResponseFormat -> OpenAI structured output configPydantic model validationvalidation retryStructuredGenerateResponse
+Acceptance:
+pytest test/components/xagent/llm_provider_openaipytest test/components/xagent/llm_structured
+
+Step 12: Implement OpenAI app-hosted tools
+Implement:
+AppToolDefinition -> OpenAI function toolOpenAI function call output -> AppToolCalltool_choice mapping
+Acceptance:
+pytest test/components/xagent/llm_provider_openaipytest test/components/xagent/llm_tools
+
+Step 13: Implement OpenAI provider-hosted tools
+Implement:
+ProviderHostedTool -> OpenAI hosted toolweb_searchfile_searchcode_interpretercomputer_use, only as pass-through configProviderToolTrace best-effort normalization
+Acceptance:
+pytest test/components/xagent/llm_provider_openai
+
+Step 14: Implement OpenAI file upload and file input
+Implement:
+upload_file()delete_file()ProviderFileRef mappingUrlFileSource mappingLocalFileSource / BytesFileSource upload path
+Acceptance:
+pytest test/components/xagent/llm_provider_openai/test_files.py
+
+Step 15: Implement OpenAI embeddings
+Implement:
+embed()text-embedding-3-smalltext-embedding-3-largedimensions parameterusage normalization
+Acceptance:
+pytest test/components/xagent/llm_provider_openai/test_embeddings.py
+
+Step 16: Implement OpenAI native batch
+Implement:
+BatchCreateRequest -> JSONLupload batch input filecreate batchget batchcancel batchget batch resultsnormalize result records
+Acceptance:
+pytest test/components/xagent/llm_provider_openai/test_batch.py
+
+Step 17: Add xagent.llm_provider_anthropic skeleton
+Create:
+components/xagent/llm_provider_anthropic/  __init__.py  provider.py  mapping.py  files.py  batch.py
+Implement skeleton:
+AnthropicProvidermodel allowlistcapabilities()embeddings raise UnsupportedCapabilityErrorunsupported methods raise NotImplementedError initially
+Acceptance:
+pytest test/components/xagent/llm_provider_anthropic
+
+Step 18: Implement Anthropic text generation
+Implement:
+GenerateRequest -> Messages API payloadsystem message mappingMessages API response -> GenerateResponseusage normalizationerror normalizationraw_response preservation
+Acceptance:
+pytest test/components/xagent/llm_provider_anthropic/test_mapping.py
+
+Step 19: Implement Anthropic app-hosted tools
+Implement:
+AppToolDefinition -> Anthropic client tooltool_use block -> AppToolCalltool_choice mapping
+Acceptance:
+pytest test/components/xagent/llm_provider_anthropicpytest test/components/xagent/llm_tools
+
+Step 20: Implement Anthropic provider-hosted tools
+Implement:
+ProviderHostedTool -> Anthropic server toolweb_search as initial supported provider-hosted toolProviderToolTrace best-effort normalization
+Acceptance:
+pytest test/components/xagent/llm_provider_anthropic
+
+Step 21: Implement Anthropic structured output
+Implement structured output with tool-style extraction:
+1. Create one synthetic extraction tool from the requested JSON Schema.2. Force/strongly request that tool where Anthropic supports tool choice.3. Parse tool input as structured output.4. Validate with Pydantic.5. Retry validation once if configured.
+Acceptance:
+pytest test/components/xagent/llm_provider_anthropicpytest test/components/xagent/llm_structured
+
+Step 22: Implement Anthropic file upload and file input
+Implement:
+upload_file()delete_file(), if provider API supports deleteProviderFileRef mapping in Messages requestLocalFileSource / BytesFileSource upload path
+Acceptance:
+pytest test/components/xagent/llm_provider_anthropic/test_files.py
+
+Step 23: Implement Anthropic native batch
+Implement:
+BatchCreateRequest -> Anthropic Message Batch requestcreate_batch()get_batch()cancel_batch()get_batch_results()normalize result records
+Acceptance:
+pytest test/components/xagent/llm_provider_anthropic/test_batch.py
+
+Step 24: Wire default registry
+Update:
+components/xagent/llm_registry/factory.py
+Register:
+openai -> OpenAIProvideranthropic -> AnthropicProvider
+Acceptance:
+pytest test/components/xagent/llm_registry
+
+Step 25: Add optional CLI base
+Create:
+bases/xagent/llm_cli/  __init__.py  main.py
+Implement minimal commands:
+textstructuredembedupload-filecreate-batchget-batchbatch-results
+Add script entry:
+[project.scripts]xagent-llm = "xagent.llm_cli.main:main"
+Acceptance:
+pytest test/bases/xagent/llm_cli
+
+Step 26: Add integration tests, skipped by default
+Create:
+test/integration/  test_openai_live.py  test_anthropic_live.py
+Skip unless:
+RUN_LIVE_LLM_TESTS=trueOPENAI_API_KEY=...ANTHROPIC_API_KEY=...
+Live tests should use tiny prompts and low token limits.
+
+23. Final Acceptance Criteria
+The implementation is complete when:
+1. Polylith bricks are under components/xagent and bases/xagent.2. No src/common_llm layout is introduced.3. OpenAI provider supports text generation.4. OpenAI provider supports structured output.5. OpenAI provider supports app-hosted tools.6. OpenAI provider supports provider-hosted tools as pass-through.7. OpenAI provider supports file upload and file input.8. OpenAI provider supports embeddings.9. OpenAI provider supports native batch.10. Anthropic provider supports text generation.11. Anthropic provider supports structured output through tool-style extraction and local validation.12. Anthropic provider supports app-hosted tools.13. Anthropic provider supports provider-hosted tools as pass-through.14. Anthropic provider supports file upload and file input.15. Anthropic provider supports native batch.16. Anthropic embeddings raise UnsupportedCapabilityError.17. Concurrent batch helper works for both providers.18. Provider registry can register new providers without changing core contracts.19. API keys are never logged.20. Raw provider responses are preserved for debugging.21. Unit tests pass without live API keys.22. Live tests are skipped unless explicitly enabled.
+
+24. Future Provider Extension Pattern
+To add a future provider such as Gemini, Vertex Gemini, DeepSeek, Azure OpenAI, or Bedrock Anthropic:
+1. Create a new component:   components/xagent/llm_provider_<provider_name>/2. Implement LLMProvider protocol.3. Add provider-specific request/response mapping.4. Register it with ProviderRegistry.5. Add tests under:   test/components/xagent/llm_provider_<provider_name>/
+Do not modify shared request models unless the new provider exposes a genuinely new cross-provider concept.
+
