@@ -2,10 +2,11 @@ import asyncio
 import json
 
 import httpx
+import pytest
 
 from xagent.llm_batch import BatchCreateRequest, BatchRequestItem, BatchStatus
-from xagent.llm_config import ProviderConfig
-from xagent.llm_contracts import GenerateRequest, Message, Role
+from xagent.llm_config import ProviderConfig, RetryConfig
+from xagent.llm_contracts import GenerateRequest, Message, ProviderServerError, Role
 from xagent.llm_provider_anthropic import AnthropicProvider
 from xagent.llm_provider_anthropic.batch import (
     batch_job_from_anthropic,
@@ -228,3 +229,70 @@ async def _test_anthropic_create_get_cancel_and_results_batch() -> None:
 
 def test_anthropic_create_get_cancel_and_results_batch() -> None:
     asyncio.run(_test_anthropic_create_get_cancel_and_results_batch())
+
+
+async def _test_anthropic_create_batch_does_not_retry_resource_creation() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500, json={"error": {"message": "try later"}})
+
+    provider = AnthropicProvider(
+        ProviderConfig(
+            provider="anthropic",
+            default_model="claude-sonnet-4-6",
+            api_key="test-key",
+            base_url="https://anthropic.test/v1",
+            retry=RetryConfig(jitter=False, initial_delay_seconds=0, max_attempts=2),
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ProviderServerError):
+        await provider.create_batch(
+            BatchCreateRequest(
+                items=[
+                    BatchRequestItem(
+                        custom_id="case-1",
+                        request=GenerateRequest(messages=[Message(role=Role.USER, content="hello")]),
+                    )
+                ]
+            )
+        )
+
+    assert calls == 1
+
+
+def test_anthropic_create_batch_does_not_retry_resource_creation() -> None:
+    asyncio.run(_test_anthropic_create_batch_does_not_retry_resource_creation())
+
+
+async def _test_anthropic_cancel_batch_does_not_retry_resource_mutation() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500, json={"error": {"message": "try later"}})
+
+    provider = AnthropicProvider(
+        ProviderConfig(
+            provider="anthropic",
+            default_model="claude-sonnet-4-6",
+            api_key="test-key",
+            base_url="https://anthropic.test/v1",
+            retry=RetryConfig(jitter=False, initial_delay_seconds=0, max_attempts=2),
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ProviderServerError):
+        await provider.cancel_batch("msgbatch_123")
+
+    assert calls == 1
+
+
+def test_anthropic_cancel_batch_does_not_retry_resource_mutation() -> None:
+    asyncio.run(_test_anthropic_cancel_batch_does_not_retry_resource_mutation())

@@ -2,10 +2,11 @@ import asyncio
 import json
 
 import httpx
+import pytest
 
 from xagent.llm_batch import BatchCreateRequest, BatchRequestItem, BatchStatus, EmbeddingRequest
-from xagent.llm_config import ProviderConfig
-from xagent.llm_contracts import GenerateRequest, Message, Role
+from xagent.llm_config import ProviderConfig, RetryConfig
+from xagent.llm_contracts import GenerateRequest, Message, ProviderServerError, Role
 from xagent.llm_provider_openai import OpenAIProvider
 from xagent.llm_provider_openai.batch import (
     batch_job_from_openai,
@@ -228,3 +229,74 @@ async def _test_openai_create_get_cancel_and_results_batch() -> None:
 
 def test_openai_create_get_cancel_and_results_batch() -> None:
     asyncio.run(_test_openai_create_get_cancel_and_results_batch())
+
+
+async def _test_openai_create_batch_does_not_retry_resource_creation() -> None:
+    batch_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal batch_calls
+        if request.method == "POST" and str(request.url) == "https://openai.test/v1/files":
+            return httpx.Response(200, json={"id": "file-input", "filename": "batch.jsonl"})
+        if request.method == "POST" and str(request.url) == "https://openai.test/v1/batches":
+            batch_calls += 1
+            return httpx.Response(500, json={"error": {"message": "try later"}})
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    provider = OpenAIProvider(
+        ProviderConfig(
+            provider="openai",
+            default_model="gpt-5.5",
+            api_key="test-key",
+            base_url="https://openai.test/v1",
+            retry=RetryConfig(jitter=False, initial_delay_seconds=0, max_attempts=2),
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ProviderServerError):
+        await provider.create_batch(
+            BatchCreateRequest(
+                items=[
+                    BatchRequestItem(
+                        custom_id="case-1",
+                        request=GenerateRequest(messages=[Message(role=Role.USER, content="hello")]),
+                    )
+                ]
+            )
+        )
+
+    assert batch_calls == 1
+
+
+def test_openai_create_batch_does_not_retry_resource_creation() -> None:
+    asyncio.run(_test_openai_create_batch_does_not_retry_resource_creation())
+
+
+async def _test_openai_cancel_batch_does_not_retry_resource_mutation() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500, json={"error": {"message": "try later"}})
+
+    provider = OpenAIProvider(
+        ProviderConfig(
+            provider="openai",
+            default_model="gpt-5.5",
+            api_key="test-key",
+            base_url="https://openai.test/v1",
+            retry=RetryConfig(jitter=False, initial_delay_seconds=0, max_attempts=2),
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ProviderServerError):
+        await provider.cancel_batch("batch_123")
+
+    assert calls == 1
+
+
+def test_openai_cancel_batch_does_not_retry_resource_mutation() -> None:
+    asyncio.run(_test_openai_cancel_batch_does_not_retry_resource_mutation())

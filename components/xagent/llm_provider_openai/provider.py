@@ -304,14 +304,13 @@ class OpenAIProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await self._send_with_retries(
-                    operation="upload_file",
-                    request=lambda: client.post(
-                        "/files",
-                        headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
-                        data={"purpose": purpose},
-                        files={"file": (filename, data, media_type or "application/octet-stream")},
-                    ),
+                # Do not retry resource-creating uploads: providers do not document
+                # idempotency keys for this endpoint, so a lost response could create duplicates.
+                response = await client.post(
+                    "/files",
+                    headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
+                    data={"purpose": purpose},
+                    files={"file": (filename, data, media_type or "application/octet-stream")},
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -374,12 +373,10 @@ class OpenAIProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await self._send_with_retries(
-                    operation="delete_file",
-                    request=lambda: client.delete(
-                        f"/files/{request.file_id}",
-                        headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
-                    ),
+                # Send once to avoid ambiguous retry outcomes after a successful server-side delete.
+                response = await client.delete(
+                    f"/files/{request.file_id}",
+                    headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -469,16 +466,15 @@ class OpenAIProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await self._send_with_retries(
-                    operation=operation,
-                    request=lambda: client.post(
-                        path,
-                        headers={
-                            "Authorization": f"Bearer {api_key.get_secret_value()}",
-                            "Content-Type": "application/json",
-                        },
-                        json=payload,
-                    ),
+                # Batch create/cancel are provider-side mutations and are not documented
+                # as idempotent, so retries are left to callers with their own de-dupe state.
+                response = await client.post(
+                    path,
+                    headers={
+                        "Authorization": f"Bearer {api_key.get_secret_value()}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(

@@ -2,13 +2,14 @@ import io
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from xagent.llm_batch import BatchJob, BatchResults, BatchStatus, EmbeddingResponse, EmbeddingVector
 from xagent.llm_config import ProviderConfig
 from xagent.llm_contracts import GenerateResponse
 from xagent.llm_files import FilePurpose, UploadedFile
 from xagent.llm_structured import StructuredGenerateResponse
-from xagent.llm_cli.main import build_parser, run
+from xagent.llm_cli.main import _structured_output_type, build_parser, run
 
 
 class FakeFactory:
@@ -125,6 +126,38 @@ def test_run_builds_provider_config() -> None:
     assert factory.config.provider == "anthropic"
     assert factory.config.default_model == "claude-sonnet-4-6"
     assert factory.config.api_key_env == "ANTHROPIC_API_KEY"
+
+
+def test_structured_output_type_enforces_json_schema() -> None:
+    output_type = _structured_output_type(
+        {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["ok"]},
+                "count": {"type": "integer", "minimum": 1},
+                "nested": {
+                    "type": "object",
+                    "properties": {"enabled": {"type": "boolean"}},
+                    "required": ["enabled"],
+                },
+            },
+            "required": ["status", "count", "nested"],
+            "additionalProperties": False,
+        },
+        "Output",
+    )
+
+    assert output_type.model_validate(
+        {"status": "ok", "count": 1, "nested": {"enabled": True}}
+    ).model_dump() == {"status": "ok", "count": 1, "nested": {"enabled": True}}
+
+    with pytest.raises(ValidationError, match="JSON Schema validation failed"):
+        output_type.model_validate({"status": "bad", "count": 0, "nested": {"enabled": "yes"}})
+
+
+def test_structured_output_type_rejects_invalid_json_schema() -> None:
+    with pytest.raises(ValueError, match="Invalid JSON Schema"):
+        _structured_output_type({"type": "definitely-not-a-json-schema-type"}, "Output")
 
 
 def async_run(coro):

@@ -3,9 +3,10 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, ClassVar, TextIO
 
-from pydantic import BaseModel, ConfigDict, create_model
+from jsonschema import Draft202012Validator, SchemaError, ValidationError as JsonSchemaValidationError
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from xagent.llm_batch import BatchCreateRequest, BatchRequestItem, EmbeddingRequest
 from xagent.llm_config import DEFAULT_API_KEY_ENV, ProviderConfig
@@ -144,19 +145,32 @@ class GenericStructuredOutput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class JsonSchemaStructuredOutput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    _schema_validator: ClassVar[Draft202012Validator]
+
+    @model_validator(mode="after")
+    def _validate_json_schema(self) -> "JsonSchemaStructuredOutput":
+        try:
+            self._schema_validator.validate(self.model_dump(mode="json"))
+        except JsonSchemaValidationError as exc:
+            raise ValueError(f"JSON Schema validation failed: {exc.message}") from exc
+        return self
+
+
 def _structured_output_type(schema: Any, schema_name: str) -> type[BaseModel]:
     if not isinstance(schema, dict):
         return GenericStructuredOutput
-    properties = schema.get("properties")
-    if not isinstance(properties, dict):
-        return GenericStructuredOutput
-    required = set(schema.get("required") or [])
-    fields = {
-        name: (Any, ... if name in required else None)
-        for name in properties
-        if isinstance(name, str)
-    }
-    return create_model(schema_name or "StructuredOutput", **fields)
+    try:
+        Draft202012Validator.check_schema(schema)
+    except SchemaError as exc:
+        raise ValueError(f"Invalid JSON Schema: {exc.message}") from exc
+    return type(
+        schema_name or "StructuredOutput",
+        (JsonSchemaStructuredOutput,),
+        {"_schema_validator": Draft202012Validator(schema)},
+    )
 
 
 def _to_json(value: Any) -> str:

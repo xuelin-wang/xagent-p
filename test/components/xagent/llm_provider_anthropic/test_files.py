@@ -2,9 +2,10 @@ import asyncio
 import json
 
 import httpx
+import pytest
 
-from xagent.llm_config import ProviderConfig
-from xagent.llm_contracts import GenerateRequest, Message, Role
+from xagent.llm_config import ProviderConfig, RetryConfig
+from xagent.llm_contracts import GenerateRequest, Message, ProviderServerError, Role
 from xagent.llm_files import (
     BytesFileSource,
     FileDeleteRequest,
@@ -126,6 +127,40 @@ def test_anthropic_upload_file_posts_multipart_and_normalizes_response() -> None
     asyncio.run(_test_anthropic_upload_file_posts_multipart_and_normalizes_response())
 
 
+async def _test_anthropic_upload_file_does_not_retry_resource_creation() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500, json={"error": {"message": "try later"}})
+
+    provider = AnthropicProvider(
+        ProviderConfig(
+            provider="anthropic",
+            default_model="claude-sonnet-4-6",
+            api_key="test-key",
+            base_url="https://anthropic.test/v1",
+            retry=RetryConfig(jitter=False, initial_delay_seconds=0, max_attempts=2),
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ProviderServerError):
+        await provider.upload_file(
+            FileUploadRequest(
+                source=BytesFileSource(filename="note.txt", data=b"hello", media_type="text/plain"),
+                purpose=FilePurpose.PROMPT_INPUT,
+            )
+        )
+
+    assert calls == 1
+
+
+def test_anthropic_upload_file_does_not_retry_resource_creation() -> None:
+    asyncio.run(_test_anthropic_upload_file_does_not_retry_resource_creation())
+
+
 async def _test_anthropic_delete_file_deletes_provider_file() -> None:
     seen: dict = {}
 
@@ -156,3 +191,32 @@ async def _test_anthropic_delete_file_deletes_provider_file() -> None:
 
 def test_anthropic_delete_file_deletes_provider_file() -> None:
     asyncio.run(_test_anthropic_delete_file_deletes_provider_file())
+
+
+async def _test_anthropic_delete_file_does_not_retry_ambiguous_delete() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500, json={"error": {"message": "try later"}})
+
+    provider = AnthropicProvider(
+        ProviderConfig(
+            provider="anthropic",
+            default_model="claude-sonnet-4-6",
+            api_key="test-key",
+            base_url="https://anthropic.test/v1",
+            retry=RetryConfig(jitter=False, initial_delay_seconds=0, max_attempts=2),
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ProviderServerError):
+        await provider.delete_file(FileDeleteRequest(provider="anthropic", file_id="file_123"))
+
+    assert calls == 1
+
+
+def test_anthropic_delete_file_does_not_retry_ambiguous_delete() -> None:
+    asyncio.run(_test_anthropic_delete_file_does_not_retry_ambiguous_delete())
