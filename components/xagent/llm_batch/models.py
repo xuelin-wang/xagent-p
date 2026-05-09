@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from xagent.llm_contracts import GenerateRequest, GenerateResponse, LLMErrorPayload
 
@@ -47,10 +47,11 @@ class BatchRequestItem(BaseModel):
 
 
 class BatchCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Native providers build/upload batch input from items; pre-uploaded input files are intentionally unsupported.
     model: str | None = None
     items: list[BatchRequestItem]
     mode: Literal["native", "concurrent"] = "native"
-    input_file: Any | None = None
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
