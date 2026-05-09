@@ -1,4 +1,4 @@
-# LLM API Layer Changes - Last Four Commits
+# LLM API Layer Changes
 
 Date: 2025-05-09
 
@@ -8,12 +8,12 @@ Covered commits:
 - `5304843 Fix LLM structured CLI and provider retries`
 - `f193feb Remove unsupported batch input file field`
 - `7082a02 Move LLM design docs to changelog`
-
-Important scope note: the current working tree also contains later uncommitted edits for mutation retry policy and CLI JSON Schema validation. Those edits are not part of the four commits listed above unless they are committed separately.
+- `884ea7f Document LLM API layer changes`
+- `2621117 Harden LLM retry and structured CLI validation`
 
 ## Executive Summary
 
-The last four commits introduce a provider-pluggable LLM API layer under the existing Polylith-style `xagent` namespace. The feature adds common provider contracts, configuration, retries, file abstractions, tool abstractions, structured output helpers, batch APIs, a provider registry, OpenAI and Anthropic provider implementations, a CLI surface, live-test scaffolding, and documentation/changelog relocation.
+These commits introduce and harden a provider-pluggable LLM API layer under the existing Polylith-style `xagent` namespace. The feature adds common provider contracts, configuration, retries, file abstractions, tool abstractions, structured output helpers, batch APIs, a provider registry, OpenAI and Anthropic provider implementations, a CLI surface, live-test scaffolding, documentation/changelog relocation, safer retry behavior for provider mutations, and full JSON Schema validation for CLI structured output.
 
 The implementation follows the design principle from the original `doc/llm-design.txt`: normalize common request and response shapes while preserving provider-specific behavior, raw responses, capability checks, and explicit unsupported-feature failures.
 
@@ -31,6 +31,8 @@ The new `xagent.llm_config` component adds provider settings, timeout settings, 
 
 The new `xagent.llm_retry` component classifies retryable HTTP statuses, parses `Retry-After`, computes exponential backoff with optional jitter, converts timeout config to `httpx.Timeout`, and now includes both synchronous delay helpers and an async retry loop.
 
+Commit `2621117` narrows provider retry usage so mutation-style provider operations are sent once instead of automatically retried. This protects callers from duplicate uploads or duplicate native batch jobs when providers process a request but the client loses the response.
+
 ### File Support
 
 The new `xagent.llm_files` component models local file sources, byte file sources, provider file references, URL file references, file inputs, upload requests, delete requests, and normalized uploaded-file records.
@@ -42,6 +44,8 @@ The new `xagent.llm_tools` component models app-hosted tools, provider-hosted to
 ### Structured Output
 
 The new `xagent.llm_structured` component models response format requests, structured generation requests and responses, JSON parsing, schema generation from Pydantic models, and Pydantic-based output validation.
+
+Commit `2621117` hardens the CLI dynamic-schema path by validating `--schema-json` output with `jsonschema.Draft202012Validator` instead of a lossy generated Pydantic model that typed every schema property as `Any`.
 
 ### Batch And Embeddings
 
@@ -66,7 +70,8 @@ The OpenAI provider implements:
 - Native batches.
 - Batch result download and JSONL normalization.
 - Error normalization.
-- Retry wrapping for HTTP requests as of commit `5304843`.
+- Retry wrapping for retry-safe HTTP requests.
+- No automatic retries for file upload, file delete, batch create, or batch cancel as of commit `2621117`.
 
 ### Anthropic Provider
 
@@ -80,7 +85,8 @@ The Anthropic provider implements:
 - Native message batches.
 - Batch result JSONL normalization.
 - Error normalization.
-- Retry wrapping for HTTP requests as of commit `5304843`.
+- Retry wrapping for retry-safe HTTP requests.
+- No automatic retries for file upload, file delete, batch create, or batch cancel as of commit `2621117`.
 
 ### CLI
 
@@ -96,6 +102,8 @@ The new `xagent-llm` CLI supports:
 
 Commit `5304843` fixes the structured command so it calls `generate_structured(...)` instead of plain `generate(...)`.
 
+Commit `2621117` changes CLI structured validation for `--schema-json` so the provider output is validated against the full JSON Schema, including nested fields, enums, bounds, and additional-property rules.
+
 ### Batch Input File Removal
 
 Commit `f193feb` removes public support for `BatchCreateRequest.input_file`. Native batch providers now build and upload batch input from `items`; pre-uploaded batch input files are intentionally unsupported.
@@ -103,6 +111,15 @@ Commit `f193feb` removes public support for `BatchCreateRequest.input_file`. Nat
 ### Documentation Move
 
 Commit `7082a02` moves the original LLM design document into `changelogs/20250509-llm-api-layer-design.txt`, adds this change-log file, and adds `changelogs/prompt.txt`.
+
+### Retry And Schema Hardening
+
+Commit `2621117` adds two production hardening changes:
+
+- Provider mutation calls that can create or alter provider resources are sent once rather than automatically retried.
+- CLI structured output with `--schema-json` is validated using a real JSON Schema validator.
+
+The commit also adds focused regression tests for both changes and adds the `jsonschema` runtime dependency.
 
 ## Rationale
 
@@ -129,6 +146,16 @@ OpenAI has a native JSON schema response format. Anthropic structured output is 
 ### Why Batch Input Files Were Removed
 
 `BatchCreateRequest.input_file` implied callers could hand the wrapper a pre-uploaded provider batch input file. The implementation did not support this consistently across providers. Removing it narrows the contract: callers provide `items`, and native providers build/upload the batch input internally.
+
+### Why Mutation Calls Do Not Retry Automatically
+
+OpenAI and Anthropic do not document a reliable idempotency-key contract for the file and batch mutation endpoints used by this wrapper. If a provider processes a request but the client sees a timeout, transport error, or transient server error, an automatic retry can create duplicate files or duplicate batch jobs.
+
+The safer default is to send mutation calls once and let higher-level callers retry only when they have durable deduplication state. Delete calls are also sent once because a lost successful delete followed by a retry can produce ambiguous provider state, such as a later `404`.
+
+### Why CLI Dynamic Schemas Use JSON Schema Validation
+
+The CLI accepts schemas dynamically through `--schema-json`. JSON Schema is the correct runtime contract because OpenAI structured output and Anthropic tool input schemas are JSON Schema based. Direct JSON Schema validation preserves nested object rules, arrays, enums, bounds, required fields, and additional-property restrictions without needing an incomplete schema-to-Pydantic conversion.
 
 ### Why Live Tests Are Gated
 
@@ -187,9 +214,31 @@ Moves documentation into changelogs:
 - Adds `changelogs/20250509-llm-api-layer-changes.md`.
 - Adds `changelogs/prompt.txt`.
 
+### `884ea7f Document LLM API layer changes`
+
+Rewrites this changelog into a broader summary of the LLM API layer work:
+
+- Summarizes the last committed feature set.
+- Adds rationale for the wrapper, Polylith split, capability checks, raw response preservation, structured-output strategy, batch input-file removal, and live-test gating.
+- Adds file-by-file and test-by-test explanations.
+
+### `2621117 Harden LLM retry and structured CLI validation`
+
+Hardens two production behaviors:
+
+- Removes automatic retries from provider mutation operations: file upload, file delete, batch create, and batch cancel.
+- Adds JSON Schema validation for CLI-provided structured-output schemas.
+
+Also adds:
+
+- `jsonschema>=4.26.0` to runtime dependencies.
+- Lockfile entries for `jsonschema` and its transitive dependencies.
+- Tests proving provider mutation calls do not retry even when `RetryConfig(max_attempts=2)` is configured.
+- Tests proving CLI schema validation enforces nested types, enums, numeric bounds, required fields, `additionalProperties: false`, and invalid-schema rejection.
+
 ## Detailed File-by-File Explanation
 
-The following sections explain the changed files from the four commits. For source files, line references describe the logical line ranges in the resulting files.
+The following sections explain the changed files from the covered commits. For source files, line references describe the logical line ranges in the resulting files.
 
 ### `bases/xagent/llm_cli/__init__.py`
 
@@ -197,9 +246,9 @@ The following sections explain the changed files from the four commits. For sour
 
 ### `bases/xagent/llm_cli/main.py`
 
-- Lines 1-8: import CLI, async, JSON, path, typing, and Pydantic helpers.
-- Lines 10-15: import shared LLM batch, config, contract, file, registry, and structured-output types.
-- Lines 18-55: define the `argparse` parser and subcommands.
+- Lines 1-9: import CLI, async, JSON, path, typing, JSON Schema validator classes, and Pydantic helpers.
+- Lines 11-16: import shared LLM batch, config, contract, file, registry, and structured-output types.
+- Lines 19-56: define the `argparse` parser and subcommands.
 - Lines 20-23: add provider, model, base URL, and API-key env override flags.
 - Lines 26-29: define `text` generation arguments.
 - Lines 31-35: define `structured` generation arguments, including schema name and schema JSON.
@@ -209,26 +258,28 @@ The following sections explain the changed files from the four commits. For sour
 - Lines 50-54: define batch retrieval/result commands.
 - Lines 58-68: implement async `run(...)`, create the provider from config, dispatch the command, serialize result JSON, and return exit code.
 - Lines 71-72: expose sync `main()` by running the async entrypoint.
-- Lines 75-124: dispatch each CLI command to the provider.
-- Lines 76-83: map `text` to `GenerateRequest` and `provider.generate(...)`.
-- Lines 84-97: map `structured` to `StructuredGenerateRequest` and, after commit `5304843`, call `provider.generate_structured(...)`.
-- Lines 85-94: parse optional schema JSON and build `ResponseFormat`.
-- Line 96: build a dynamic output model for CLI structured responses.
-- Lines 98-99: map `embed` to `EmbeddingRequest`.
-- Lines 100-107: map `upload-file` to `FileUploadRequest` and `LocalFileSource`.
-- Lines 108-119: map `create-batch` prompts to `BatchCreateRequest` with `BatchRequestItem` values.
-- Lines 120-123: map batch get/results commands to provider calls.
-- Lines 127-133: build `ProviderConfig` from CLI args and default API-key env mapping.
-- Lines 136-140: provide provider-specific default models.
+- Lines 76-125: dispatch each CLI command to the provider.
+- Lines 77-84: map `text` to `GenerateRequest` and `provider.generate(...)`.
+- Lines 85-98: map `structured` to `StructuredGenerateRequest` and, after commit `5304843`, call `provider.generate_structured(...)`.
+- Lines 86-95: parse optional schema JSON and build `ResponseFormat`.
+- Line 97: build a dynamic output model for CLI structured responses.
+- Lines 99-100: map `embed` to `EmbeddingRequest`.
+- Lines 101-108: map `upload-file` to `FileUploadRequest` and `LocalFileSource`.
+- Lines 109-120: map `create-batch` prompts to `BatchCreateRequest` with `BatchRequestItem` values.
+- Lines 121-124: map batch get/results commands to provider calls.
+- Lines 128-134: build `ProviderConfig` from CLI args and default API-key env mapping.
+- Lines 137-141: provide provider-specific default models.
 - Lines 143-145: define `GenericStructuredOutput` for schema-less JSON object output.
-- Lines 147-159: define `_structured_output_type(...)`; in the committed code this preserves top-level required fields but maps schema property values to `Any`.
-- Lines 162-165: serialize Pydantic or plain values as compact JSON.
-- Lines 168-169: executable module guard.
+- Lines 148-159: define `JsonSchemaStructuredOutput`, a dynamic Pydantic base model that allows arbitrary output fields and validates the full dumped object with a class-level `Draft202012Validator`.
+- Lines 162-173: define `_structured_output_type(...)`; schema-less calls still use `GenericStructuredOutput`, while CLI-provided schemas are checked with `Draft202012Validator.check_schema(...)` and attached to a generated schema-backed output type.
+- Lines 176-179: serialize Pydantic or plain values as compact JSON.
+- Lines 182-183: executable module guard.
 
 Rationale:
 
 - The CLI is a thin operational surface over the provider registry and common contracts.
 - The structured CLI fix is important because plain generation bypassed structured validation and response normalization.
+- The JSON Schema validation hardening is important because CLI schemas are dynamic and may include nested rules that a lossy Pydantic field map cannot enforce.
 
 ### `components/xagent/llm_batch/__init__.py`
 
@@ -582,17 +633,17 @@ Rationale:
 - Lines 203-210: return normalized structured response.
 - Lines 214-228: implement embeddings.
 - Lines 230-284: post embeddings payload, including auth, timeout, retries, and error mapping.
-- Lines 286-347: upload files and normalize OpenAI file response.
-- Lines 349-405: delete provider files.
+- Lines 286-347: upload files and normalize OpenAI file response; commit `2621117` sends this mutation once instead of through `_send_with_retries(...)`.
+- Lines 349-405: delete provider files; commit `2621117` sends this mutation once to avoid ambiguous retry outcomes.
 - Lines 406-426: create native batches by building JSONL, uploading it as batch input, and posting batch job payload.
 - Lines 428-434: get and cancel native batches.
 - Lines 436-446: get batch results by downloading output/error files and parsing JSONL.
-- Lines 448-503: post OpenAI batch operations with auth, retries as of commit `5304843`, timeout mapping, and error mapping.
+- Lines 448-503: post OpenAI batch create/cancel operations with auth, timeout mapping, and error mapping; commit `2621117` removes automatic retries from these provider mutations.
 - Lines 505-550: get OpenAI batch status.
 - Lines 552-599: download OpenAI file content.
 - Lines 601-661: post OpenAI Responses API payloads.
 - Lines 663-677: reject unsupported generation fields.
-- Lines 678-690: commit `5304843` adds `_send_with_retries(...)` using `retry_async`.
+- Lines 678-690: commit `5304843` adds `_send_with_retries(...)` using `retry_async`; after commit `2621117`, this helper remains for retry-safe operations such as generation and reads.
 - Lines 692-714: normalize provider error responses into project error classes.
 - Lines 717-739: helper functions for safe JSON error parsing, error message extraction, and Unix timestamp conversion.
 
@@ -645,13 +696,13 @@ Rationale:
 - Lines 218-224: validate tool input against requested output type.
 - Lines 225-244: retry structured validation by appending a corrective message.
 - Lines 257-266: explicitly reject embeddings for Anthropic.
-- Lines 268-330: upload files through Anthropic files API.
-- Lines 332-391: delete provider files.
+- Lines 268-330: upload files through Anthropic files API; commit `2621117` sends this mutation once instead of through `_send_with_retries(...)`.
+- Lines 332-391: delete provider files; commit `2621117` sends this mutation once to avoid ambiguous retry outcomes.
 - Lines 393-425: create, get, cancel, and retrieve native batch results.
-- Lines 427-483: post batch create/cancel operations with auth, beta header when needed, retries as of commit `5304843`, timeout mapping, and error mapping.
+- Lines 427-483: post batch create/cancel operations with auth, beta header when needed, timeout mapping, and error mapping; commit `2621117` removes automatic retries from these provider mutations.
 - Lines 485-533: get batch or batch result responses.
 - Lines 535-551: reject unsupported generate fields.
-- Lines 553-565: commit `5304843` adds `_send_with_retries(...)`.
+- Lines 553-565: commit `5304843` adds `_send_with_retries(...)`; after commit `2621117`, this helper remains for retry-safe operations such as generation and reads.
 - Lines 567-595: normalize provider error responses.
 - Lines 598-658: helpers for safe JSON parsing, uploaded-file detection, batch file detection, structured tool creation, and structured tool input extraction.
 
@@ -665,15 +716,18 @@ Rationale:
 
 - Project scripts section: adds `xagent-llm = "xagent.llm_cli.main:main"`.
 - Dependencies: initial LLM layer depends on the existing runtime stack plus `httpx`, `pydantic`, and `pyyaml` already present in the project context.
+- Commit `2621117` adds `jsonschema>=4.26.0` as a runtime dependency for CLI structured-output validation.
 
 Rationale:
 
 - Exposes the CLI through the package script mechanism and ensures runtime dependencies are available.
+- Keeps JSON Schema validation available in installed CLI environments, not only in tests.
 
 ### `uv.lock`
 
 - Adds/updates package lock metadata for the project after adding the LLM components and script metadata.
 - Records the package's own dependency/script metadata for reproducible installs.
+- Commit `2621117` adds lock entries for `jsonschema`, `attrs`, `jsonschema-specifications`, `referencing`, and `rpds-py`.
 
 ### `changelogs/20250509-llm-api-layer-design.txt`
 
@@ -699,6 +753,7 @@ Rationale:
 - Verifies each subcommand dispatches to the expected provider method.
 - Verifies provider config construction for Anthropic.
 - Commit `5304843` updates the fake provider and assertions to cover `generate_structured(...)`.
+- Commit `2621117` adds direct tests for `_structured_output_type(...)` to prove CLI schemas enforce nested types, enums, numeric bounds, required fields, `additionalProperties: false`, and invalid-schema rejection.
 
 ### Batch Tests
 
@@ -821,6 +876,7 @@ Rationale:
 `test/components/xagent/llm_provider_openai/test_files.py`
 
 - Verifies file purpose mapping, multipart upload payloads, normalized uploaded files, and delete requests.
+- Commit `2621117` adds regression tests proving file upload and file delete are sent once and do not retry when provider mutation responses are 5xx.
 
 `test/components/xagent/llm_provider_openai/test_batch.py`
 
@@ -828,6 +884,7 @@ Rationale:
 - Verifies batch job normalization.
 - Verifies result JSONL parsing.
 - Verifies create/get/cancel/results provider flow.
+- Commit `2621117` adds regression tests proving native batch create and cancel are sent once and do not retry when provider mutation responses are 5xx.
 
 ### Anthropic Provider Tests
 
@@ -851,6 +908,7 @@ Rationale:
 `test/components/xagent/llm_provider_anthropic/test_files.py`
 
 - Verifies files beta header, uploaded-file references, multipart upload payloads, normalized uploaded files, and delete requests.
+- Commit `2621117` adds regression tests proving file upload and file delete are sent once and do not retry when provider mutation responses are 5xx.
 
 `test/components/xagent/llm_provider_anthropic/test_batch.py`
 
@@ -858,6 +916,7 @@ Rationale:
 - Verifies batch job normalization.
 - Verifies batch result JSONL parsing.
 - Verifies create/get/cancel/results provider flow.
+- Commit `2621117` adds regression tests proving native batch create and cancel are sent once and do not retry when provider mutation responses are 5xx.
 
 ### Live Integration Tests
 
@@ -871,19 +930,9 @@ Rationale:
 - Adds env-gated live tests for Anthropic text generation, structured generation, and tool/schema behavior.
 - Tests require real credentials and live-test opt-in.
 
-## Current Working Tree Follow-Up Changes Not Included In The Four Commits
-
-At the time this changelog was updated, the working tree also contained uncommitted changes for:
-
-- Disabling automatic retries for file upload, file delete, batch create, and batch cancel mutation calls.
-- Adding `jsonschema` runtime validation for CLI-provided schemas.
-- Adding focused tests for those two follow-up fixes.
-
-Those are important follow-up changes, but they are not in the last four commits listed at the top of this document.
-
 ## Residual Risks And Follow-Ups
 
-- CLI structured output in the committed code still uses a lossy Pydantic model for dynamic schemas; the uncommitted working-tree follow-up replaces that with JSON Schema validation.
-- In commit `5304843`, retries are applied broadly to provider HTTP calls; the uncommitted working-tree follow-up narrows retry behavior for mutation-style calls.
+- CLI structured output remains object-oriented because the shared structured parsing path expects JSON objects.
+- A future hardening step could reject CLI schemas whose root type is not `"object"` to make that contract explicit before provider calls.
 - Live provider tests are skipped unless credentials and live-test flags are configured.
 - Future providers should implement the `LLMProvider` protocol and register through `ProviderRegistry`.
