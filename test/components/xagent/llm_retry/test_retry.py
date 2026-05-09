@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from random import Random
 
 from xagent.llm_config import RetryConfig
-from xagent.llm_retry import backoff_delay, is_retryable_status, parse_retry_after
+from xagent.llm_retry import backoff_delay, is_retryable_status, parse_retry_after, retry_async
 
 
 def test_retryable_status_classifier() -> None:
@@ -32,3 +32,30 @@ def test_backoff_delay_with_jitter_is_bounded() -> None:
     config = RetryConfig(jitter=True, initial_delay_seconds=10)
 
     assert 0 <= backoff_delay(1, config, rng=Random(1)) <= 10
+
+
+def test_retry_async_retries_results() -> None:
+    calls = 0
+    sleeps: list[float] = []
+
+    async def call() -> int:
+        nonlocal calls
+        calls += 1
+        return 500 if calls == 1 else 200
+
+    async def sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    async def run() -> int:
+        return await retry_async(
+            call,
+            RetryConfig(jitter=False, initial_delay_seconds=0.25),
+            should_retry_result=lambda result: result == 500,
+            sleep=sleep,
+        )
+
+    import asyncio
+
+    assert asyncio.run(run()) == 200
+    assert calls == 2
+    assert sleeps == [0.25]

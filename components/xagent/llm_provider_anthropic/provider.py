@@ -47,7 +47,7 @@ from xagent.llm_provider_anthropic.batch import (
     request_to_anthropic_batch_payload,
 )
 from xagent.llm_provider_anthropic.files import ANTHROPIC_FILES_BETA, anthropic_files_beta_header
-from xagent.llm_retry import to_httpx_timeout
+from xagent.llm_retry import is_retryable_status, parse_retry_after, retry_async, to_httpx_timeout
 from xagent.llm_structured import StructuredGenerateRequest, StructuredGenerateResponse, validate_structured_output
 from xagent.llm_tools import AppToolDefinition, ToolChoice
 
@@ -161,10 +161,13 @@ class AnthropicProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await client.post(
-                    "/messages",
-                    headers=headers,
-                    json=payload,
+                response = await self._send_with_retries(
+                    operation="generate",
+                    request=lambda: client.post(
+                        "/messages",
+                        headers=headers,
+                        json=payload,
+                    ),
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -282,14 +285,17 @@ class AnthropicProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await client.post(
-                    "/files",
-                    headers={
-                        "x-api-key": api_key.get_secret_value(),
-                        "anthropic-version": "2023-06-01",
-                        "anthropic-beta": ANTHROPIC_FILES_BETA,
-                    },
-                    files={"file": (filename, data, media_type or "application/octet-stream")},
+                response = await self._send_with_retries(
+                    operation="upload_file",
+                    request=lambda: client.post(
+                        "/files",
+                        headers={
+                            "x-api-key": api_key.get_secret_value(),
+                            "anthropic-version": "2023-06-01",
+                            "anthropic-beta": ANTHROPIC_FILES_BETA,
+                        },
+                        files={"file": (filename, data, media_type or "application/octet-stream")},
+                    ),
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -351,13 +357,16 @@ class AnthropicProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await client.delete(
-                    f"/files/{request.file_id}",
-                    headers={
-                        "x-api-key": api_key.get_secret_value(),
-                        "anthropic-version": "2023-06-01",
-                        "anthropic-beta": ANTHROPIC_FILES_BETA,
-                    },
+                response = await self._send_with_retries(
+                    operation="delete_file",
+                    request=lambda: client.delete(
+                        f"/files/{request.file_id}",
+                        headers={
+                            "x-api-key": api_key.get_secret_value(),
+                            "anthropic-version": "2023-06-01",
+                            "anthropic-beta": ANTHROPIC_FILES_BETA,
+                        },
+                    ),
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -447,7 +456,10 @@ class AnthropicProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await client.post(path, headers=headers, json=payload)
+                response = await self._send_with_retries(
+                    operation=operation,
+                    request=lambda: client.post(path, headers=headers, json=payload),
+                )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
                 LLMErrorPayload(
@@ -488,12 +500,15 @@ class AnthropicProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await client.get(
-                    path,
-                    headers={
-                        "x-api-key": api_key.get_secret_value(),
-                        "anthropic-version": "2023-06-01",
-                    },
+                response = await self._send_with_retries(
+                    operation=operation,
+                    request=lambda: client.get(
+                        path,
+                        headers={
+                            "x-api-key": api_key.get_secret_value(),
+                            "anthropic-version": "2023-06-01",
+                        },
+                    ),
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -534,6 +549,20 @@ class AnthropicProvider:
                 "Anthropic generate currently supports text-only requests; unsupported fields: "
                 + ", ".join(unsupported)
             )
+
+    async def _send_with_retries(
+        self,
+        *,
+        operation: str,
+        request,
+    ) -> httpx.Response:
+        return await retry_async(
+            request,
+            self.config.retry,
+            should_retry_result=lambda response: is_retryable_status(response.status_code),
+            retry_after_from_result=lambda response: parse_retry_after(response.headers.get("retry-after")),
+            should_retry_exception=lambda exc: isinstance(exc, (httpx.TimeoutException, httpx.TransportError)),
+        )
 
     def _raise_response_error(
         self,

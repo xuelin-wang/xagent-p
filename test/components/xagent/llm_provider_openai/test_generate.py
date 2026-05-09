@@ -5,7 +5,7 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
-from xagent.llm_config import ProviderConfig
+from xagent.llm_config import ProviderConfig, RetryConfig
 from xagent.llm_contracts import (
     AuthenticationError,
     GenerateRequest,
@@ -100,6 +100,43 @@ async def _test_openai_generate_normalizes_rate_limit_error() -> None:
 
 def test_openai_generate_normalizes_rate_limit_error() -> None:
     asyncio.run(_test_openai_generate_normalizes_rate_limit_error())
+
+
+async def _test_openai_generate_retries_retryable_response() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(500, json={"error": {"message": "try again"}})
+        return httpx.Response(
+            200,
+            json={
+                "model": "gpt-5.5",
+                "output_text": "answer",
+                "status": "completed",
+            },
+        )
+
+    provider = OpenAIProvider(
+        ProviderConfig(
+            provider="openai",
+            default_model="gpt-5.5",
+            api_key="test-key",
+            retry=RetryConfig(jitter=False, initial_delay_seconds=0),
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+
+    response = await provider.generate(GenerateRequest(messages=[Message(role=Role.USER, content="Hi")]))
+
+    assert calls == 2
+    assert response.text == "answer"
+
+
+def test_openai_generate_retries_retryable_response() -> None:
+    asyncio.run(_test_openai_generate_retries_retryable_response())
 
 
 async def _test_openai_generate_rejects_unknown_model() -> None:

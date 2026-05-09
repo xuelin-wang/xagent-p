@@ -7,6 +7,7 @@ from xagent.llm_batch import BatchJob, BatchResults, BatchStatus, EmbeddingRespo
 from xagent.llm_config import ProviderConfig
 from xagent.llm_contracts import GenerateResponse
 from xagent.llm_files import FilePurpose, UploadedFile
+from xagent.llm_structured import StructuredGenerateResponse
 from xagent.llm_cli.main import build_parser, run
 
 
@@ -27,6 +28,15 @@ class FakeProvider:
     async def generate(self, request):
         self.calls.append(("generate", request))
         return GenerateResponse(provider="openai", model="gpt-5.5", text="ok")
+
+    async def generate_structured(self, request, output_type):
+        self.calls.append(("generate_structured", (request, output_type)))
+        return StructuredGenerateResponse(
+            provider="openai",
+            model="gpt-5.5",
+            data=output_type.model_validate({"value": "ok"}),
+            raw_json={"value": "ok"},
+        )
 
     async def embed(self, request):
         self.calls.append(("embed", request))
@@ -72,7 +82,15 @@ def test_build_parser_has_expected_commands() -> None:
     ("argv", "call"),
     [
         (["text", "hello"], "generate"),
-        (["structured", "hello", "--schema-json", '{"type":"object"}'], "generate"),
+        (
+            [
+                "structured",
+                "hello",
+                "--schema-json",
+                '{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}',
+            ],
+            "generate_structured",
+        ),
         (["embed", "hello"], "embed"),
         (["upload-file", "/tmp/note.txt"], "upload_file"),
         (["create-batch", "one", "two"], "create_batch"),

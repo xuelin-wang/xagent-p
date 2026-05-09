@@ -53,7 +53,7 @@ from xagent.llm_provider_openai.embeddings import (
     response_from_openai_embeddings,
 )
 from xagent.llm_provider_openai.files import openai_file_purpose
-from xagent.llm_retry import to_httpx_timeout
+from xagent.llm_retry import is_retryable_status, parse_retry_after, retry_async, to_httpx_timeout
 from xagent.llm_structured import (
     StructuredGenerateRequest,
     StructuredGenerateResponse,
@@ -247,13 +247,16 @@ class OpenAIProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await client.post(
-                    "/embeddings",
-                    headers={
-                        "Authorization": f"Bearer {api_key.get_secret_value()}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
+                response = await self._send_with_retries(
+                    operation="embed",
+                    request=lambda: client.post(
+                        "/embeddings",
+                        headers={
+                            "Authorization": f"Bearer {api_key.get_secret_value()}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    ),
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -301,11 +304,14 @@ class OpenAIProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await client.post(
-                    "/files",
-                    headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
-                    data={"purpose": purpose},
-                    files={"file": (filename, data, media_type or "application/octet-stream")},
+                response = await self._send_with_retries(
+                    operation="upload_file",
+                    request=lambda: client.post(
+                        "/files",
+                        headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
+                        data={"purpose": purpose},
+                        files={"file": (filename, data, media_type or "application/octet-stream")},
+                    ),
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -368,9 +374,12 @@ class OpenAIProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await client.delete(
-                    f"/files/{request.file_id}",
-                    headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
+                response = await self._send_with_retries(
+                    operation="delete_file",
+                    request=lambda: client.delete(
+                        f"/files/{request.file_id}",
+                        headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
+                    ),
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -460,13 +469,16 @@ class OpenAIProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await client.post(
-                    path,
-                    headers={
-                        "Authorization": f"Bearer {api_key.get_secret_value()}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
+                response = await self._send_with_retries(
+                    operation=operation,
+                    request=lambda: client.post(
+                        path,
+                        headers={
+                            "Authorization": f"Bearer {api_key.get_secret_value()}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    ),
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -508,9 +520,12 @@ class OpenAIProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await client.get(
-                    f"/batches/{batch_id}",
-                    headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
+                response = await self._send_with_retries(
+                    operation="get_batch",
+                    request=lambda: client.get(
+                        f"/batches/{batch_id}",
+                        headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
+                    ),
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -554,9 +569,12 @@ class OpenAIProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await client.get(
-                    f"/files/{file_id}/content",
-                    headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
+                response = await self._send_with_retries(
+                    operation="download_file",
+                    request=lambda: client.get(
+                        f"/files/{file_id}/content",
+                        headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
+                    ),
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -606,13 +624,16 @@ class OpenAIProvider:
                 timeout=to_httpx_timeout(self.config.timeout),
                 transport=self._transport,
             ) as client:
-                response = await client.post(
-                    "/responses",
-                    headers={
-                        "Authorization": f"Bearer {api_key.get_secret_value()}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
+                response = await self._send_with_retries(
+                    operation=operation,
+                    request=lambda: client.post(
+                        "/responses",
+                        headers={
+                            "Authorization": f"Bearer {api_key.get_secret_value()}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    ),
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -653,6 +674,20 @@ class OpenAIProvider:
                 "OpenAI generate currently does not support fields: "
                 + ", ".join(unsupported)
             )
+
+    async def _send_with_retries(
+        self,
+        *,
+        operation: str,
+        request,
+    ) -> httpx.Response:
+        return await retry_async(
+            request,
+            self.config.retry,
+            should_retry_result=lambda response: is_retryable_status(response.status_code),
+            retry_after_from_result=lambda response: parse_retry_after(response.headers.get("retry-after")),
+            should_retry_exception=lambda exc: isinstance(exc, (httpx.TimeoutException, httpx.TransportError)),
+        )
 
     def _raise_response_error(self, response: httpx.Response, model: str | None, *, operation: str) -> None:
         raw_error = _safe_json(response)

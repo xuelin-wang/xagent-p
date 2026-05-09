@@ -5,12 +5,14 @@ import sys
 from pathlib import Path
 from typing import Any, TextIO
 
+from pydantic import BaseModel, ConfigDict, create_model
+
 from xagent.llm_batch import BatchCreateRequest, BatchRequestItem, EmbeddingRequest
 from xagent.llm_config import DEFAULT_API_KEY_ENV, ProviderConfig
 from xagent.llm_contracts import GenerateRequest, Message, Role
 from xagent.llm_files import FilePurpose, FileUploadRequest, LocalFileSource
 from xagent.llm_registry import LLMClientFactory
-from xagent.llm_structured import ResponseFormat, ResponseFormatType
+from xagent.llm_structured import ResponseFormat, ResponseFormatType, StructuredGenerateRequest
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -81,8 +83,8 @@ async def _dispatch(provider: Any, args: argparse.Namespace) -> Any:
         )
     if args.command == "structured":
         schema = json.loads(args.schema_json) if args.schema_json else None
-        return await provider.generate(
-            GenerateRequest(
+        return await provider.generate_structured(
+            StructuredGenerateRequest(
                 messages=[Message(role=Role.USER, content=args.prompt)],
                 max_output_tokens=args.max_output_tokens,
                 response_format=ResponseFormat(
@@ -90,7 +92,8 @@ async def _dispatch(provider: Any, args: argparse.Namespace) -> Any:
                     schema_name=args.schema_name if schema else None,
                     json_schema=schema,
                 ),
-            )
+            ),
+            _structured_output_type(schema, args.schema_name),
         )
     if args.command == "embed":
         return await provider.embed(EmbeddingRequest(inputs=args.inputs, dimensions=args.dimensions))
@@ -135,6 +138,25 @@ def _default_model(provider: str) -> str:
         "openai": "gpt-5.5",
         "anthropic": "claude-sonnet-4-6",
     }[provider]
+
+
+class GenericStructuredOutput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+def _structured_output_type(schema: Any, schema_name: str) -> type[BaseModel]:
+    if not isinstance(schema, dict):
+        return GenericStructuredOutput
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return GenericStructuredOutput
+    required = set(schema.get("required") or [])
+    fields = {
+        name: (Any, ... if name in required else None)
+        for name in properties
+        if isinstance(name, str)
+    }
+    return create_model(schema_name or "StructuredOutput", **fields)
 
 
 def _to_json(value: Any) -> str:
