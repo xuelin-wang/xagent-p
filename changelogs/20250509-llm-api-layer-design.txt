@@ -432,7 +432,7 @@ Step 26: Add integration tests, skipped by default
 Create:
 test/integration/  test_openai_live.py  test_anthropic_live.py
 Skip unless:
-RUN_LIVE_LLM_TESTS=trueOPENAI_API_KEY=...ANTHROPIC_API_KEY=...
+OPENAI_API_KEY=... ANTHROPIC_API_KEY=... pytest -m require_env
 Live tests should use tiny prompts and low token limits.
 
 23. Final Acceptance Criteria
@@ -443,4 +443,3 @@ The implementation is complete when:
 To add a future provider such as Gemini, Vertex Gemini, DeepSeek, Azure OpenAI, or Bedrock Anthropic:
 1. Create a new component:   components/xagent/llm_provider_<provider_name>/2. Implement LLMProvider protocol.3. Add provider-specific request/response mapping.4. Register it with ProviderRegistry.5. Add tests under:   test/components/xagent/llm_provider_<provider_name>/
 Do not modify shared request models unless the new provider exposes a genuinely new cross-provider concept.
-

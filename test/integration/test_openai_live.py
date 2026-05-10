@@ -1,5 +1,4 @@
 import asyncio
-import os
 
 import pytest
 from pydantic import BaseModel
@@ -17,13 +16,7 @@ class LiveOpenAIStructuredOutput(BaseModel):
     value: str
 
 
-pytestmark = [
-    pytest.mark.require_env,
-    pytest.mark.skipif(
-        os.environ.get("RUN_LIVE_LLM_TESTS") != "true" or not os.environ.get("OPENAI_API_KEY"),
-        reason="RUN_LIVE_LLM_TESTS=true and OPENAI_API_KEY are required for real OpenAI tests.",
-    ),
-]
+pytestmark = pytest.mark.require_env
 
 
 def test_live_openai_generates_text() -> None:

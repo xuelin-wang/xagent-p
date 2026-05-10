@@ -82,7 +82,8 @@ async def _test_anthropic_generate_requires_api_key() -> None:
         await provider.generate(GenerateRequest(messages=[Message(role=Role.USER, content="Hi")]))
 
 
-def test_anthropic_generate_requires_api_key() -> None:
+def test_anthropic_generate_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     asyncio.run(_test_anthropic_generate_requires_api_key())
 
 

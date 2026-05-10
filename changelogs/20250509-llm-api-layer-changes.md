@@ -159,7 +159,7 @@ The CLI accepts schemas dynamically through `--schema-json`. JSON Schema is the 
 
 ### Why Live Tests Are Gated
 
-Live provider tests cost money, need real credentials, and depend on network/provider availability. They are marked `require_env` and gated behind environment variables/API keys so normal test runs remain deterministic.
+Live provider tests cost money, need real credentials, and depend on network/provider availability. They are marked `require_env`; normal pytest runs exclude that marker by default so standard test runs remain deterministic.
 
 ## Verification History
 

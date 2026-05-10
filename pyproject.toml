@@ -72,6 +72,7 @@ module-name = "xagent"
 module-root = ""
 
 [tool.pytest.ini_options]
+addopts = "-m 'not require_env'"
 markers = [
     "require_env: tests that require real provider credentials or external services",
 ]

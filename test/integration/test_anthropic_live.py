@@ -1,5 +1,4 @@
 import asyncio
-import os
 
 import pytest
 from pydantic import BaseModel
@@ -20,13 +19,7 @@ class LiveAnthropicStructuredOutput(BaseModel):
     value: str
 
 
-pytestmark = [
-    pytest.mark.require_env,
-    pytest.mark.skipif(
-        os.environ.get("RUN_LIVE_LLM_TESTS") != "true" or not os.environ.get("ANTHROPIC_API_KEY"),
-        reason="RUN_LIVE_LLM_TESTS=true and ANTHROPIC_API_KEY are required for real Anthropic tests.",
-    ),
-]
+pytestmark = pytest.mark.require_env
 
 
 def test_live_anthropic_generates_text() -> None:
