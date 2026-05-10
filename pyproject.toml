@@ -22,6 +22,7 @@ xagent-llm = "xagent.llm_cli.main:main"
 
 [dependency-groups]
 dev = [
+    "jupyterlab>=4.5.7",
     "polylith-cli>=1.43.0",
     "pytest>=9.0.2",
 ]
