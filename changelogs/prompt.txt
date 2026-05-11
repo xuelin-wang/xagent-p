@@ -1,1 +1,16 @@
-Summarize all changes for the features and provide rationale for the changes. Then give detailed explaination of line by line changes in all the changed files.
+Compare the current branch against the `main` branch.
+
+Create a detailed change summary that includes:
+
+1. A feature-level summary of all changes introduced by the current branch.
+2. The rationale or likely motivation for each major change.
+3. A file-by-file breakdown of all changed files.
+4. A line-by-line interpretation of the meaningful changes in each changed file.
+
+Write the final report to:
+
+`changelogs/YYYYMMDD-feature-summary-changes.md`
+
+Replace `YYYYMMDD` with today’s date.
+
+Do not modify application code. Only create or update the changelog file.
