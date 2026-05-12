@@ -59,6 +59,8 @@ Do not add memory for routine edits, temporary details, obvious facts, or sensit
 
 Reusable prompts for common coding-agent workflows live under `prompts/`.
 
+Project-memory maintenance workflows live under the repo-local `skills/mementum-memory/` skill.
+
 Use them when appropriate:
 
 - `prompts/workflows/orient-repo.md`
@@ -71,14 +73,10 @@ Use them when appropriate:
 - `prompts/reviews/compare-branches.md`
 - `prompts/reviews/security-review.md`
 - `prompts/reviews/test-coverage-review.md`
-- `prompts/maintenance/update-project-memory.md`
-- `prompts/maintenance/refresh-project-state.md`
-- `prompts/maintenance/refresh-project-memory.md`
-- `prompts/maintenance/refresh-codebase-map.md`
-- `prompts/maintenance/synthesize-memories.md`
-- `prompts/maintenance/prune-stale-memory.md`
 
 If a workflow prompt proves useful and reusable, update it in `prompts/` rather than leaving it only in chat history.
+
+If a project-memory maintenance workflow changes, update `skills/mementum-memory/` rather than duplicating it under `prompts/`.
 
 ## Implementation Principles
 

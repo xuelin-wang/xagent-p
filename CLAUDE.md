@@ -6,6 +6,8 @@ Use `AGENTS.md` as the shared project instruction source.
 
 Reusable coding-agent workflow prompts live under `prompts/`; use the relevant prompt file when a task matches a reusable workflow.
 
+Project-memory maintenance workflows live under the repo-local `skills/mementum-memory/` skill.
+
 For large or ambiguous changes:
 
 1. Read `mementum/state.md`.
