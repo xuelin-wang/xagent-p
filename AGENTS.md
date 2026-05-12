@@ -55,6 +55,31 @@ Good candidates:
 
 Do not add memory for routine edits, temporary details, obvious facts, or sensitive data.
 
+## Reusable Workflow Prompts
+
+Reusable prompts for common coding-agent workflows live under `prompts/`.
+
+Use them when appropriate:
+
+- `prompts/workflows/orient-repo.md`
+- `prompts/workflows/implement-feature.md`
+- `prompts/workflows/fix-bug.md`
+- `prompts/workflows/refactor-code.md`
+- `prompts/workflows/generate-changelog.md`
+- `prompts/reviews/review-current-branch.md`
+- `prompts/reviews/review-pr-risk.md`
+- `prompts/reviews/compare-branches.md`
+- `prompts/reviews/security-review.md`
+- `prompts/reviews/test-coverage-review.md`
+- `prompts/maintenance/update-project-memory.md`
+- `prompts/maintenance/refresh-project-state.md`
+- `prompts/maintenance/refresh-project-memory.md`
+- `prompts/maintenance/refresh-codebase-map.md`
+- `prompts/maintenance/synthesize-memories.md`
+- `prompts/maintenance/prune-stale-memory.md`
+
+If a workflow prompt proves useful and reusable, update it in `prompts/` rather than leaving it only in chat history.
+
 ## Implementation Principles
 
 - Understand existing code before changing it.
