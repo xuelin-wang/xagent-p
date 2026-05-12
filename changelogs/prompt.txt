@@ -1,11 +1,15 @@
 Compare the current branch against the `main` branch.
 
-Create a detailed change summary that includes:
+Create a concise reviewer-focused changelog that explains only the information that helps a human reviewer understand the change. Avoid repeating facts that are obvious from reading the diff, such as simple line deletions, renames, or mechanical edits, unless they affect behavior, design, or review context.
 
-1. A feature-level summary of all changes introduced by the current branch.
-2. The rationale or likely motivation for each major change.
-3. A file-by-file breakdown of all changed files.
-4. A line-by-line interpretation of the meaningful changes in each changed file.
+Include:
+
+1. A brief feature-level summary of the branch.
+2. The rationale or likely motivation for meaningful changes.
+3. A file-by-file explanation of changed files, focused on why each file changed and what reviewers should pay attention to.
+4. A line-level or section-level interpretation only where the code change is non-obvious, behaviorally important, or useful for review.
+
+Keep the report concise. Prefer higher-level explanations over restating the diff. Do not include filler, obvious observations, or overly verbose descriptions.
 
 Write the final report to:
 

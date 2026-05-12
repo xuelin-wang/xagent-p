@@ -96,3 +96,25 @@ Source pointers:
 - `changelogs/20250509-llm-api-layer-changes.md`
 - `components/xagent/llm_batch/models.py`
 - `test/components/xagent/llm_batch/test_models.py`
+
+## 2026-05-11 - Keep Reusable Prompts Separate From Project Memory
+
+Status: accepted
+
+Decision:
+- Store reusable coding-agent workflow prompts under `prompts/`.
+- Keep `mementum/` focused on project memory: state, decisions, rationale, conventions, pitfalls, and durable lessons.
+
+Rationale:
+- Prompts are reusable task instructions, while project memory is durable knowledge about the repository.
+- Keeping them separate prevents `mementum/` from becoming a workflow-prompt library.
+
+Implications:
+- Root agent guidance should point agents to `prompts/` when a reusable workflow applies.
+- Prompt improvements belong in `prompts/`.
+- Durable lessons learned from prompt use can still be captured in `mementum/`.
+
+Source pointers:
+- `prompts/README.md`
+- `AGENTS.md`
+- `CLAUDE.md`

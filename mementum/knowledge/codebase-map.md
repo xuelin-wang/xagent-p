@@ -27,6 +27,7 @@ High-value areas:
 - `test/`: tests mirror base/component structure; live provider tests live under `test/integration/`.
 - `development/notebooks/`: local exploration notebooks.
 - `changelogs/`: design and change rationale that should be consulted before changing LLM behavior.
+- `prompts/`: reusable coding-agent workflow, review, and project-memory maintenance prompts.
 
 Important entry points:
 
@@ -61,11 +62,13 @@ Architectural boundaries:
 - `.gitignore`
 - `.dockerignore`
 - `changelogs/20250509-llm-api-layer-changes.md`
+- `prompts/README.md`
 
 ## Notes for Future Agents
 
 - Do not add `src/` or `src/common_llm` style layout unless the Polylith configuration changes.
 - Before changing LLM provider behavior, read the LLM changelog and relevant provider tests.
+- Use `prompts/` for reusable coding-agent workflows; keep `mementum/` focused on durable project memory.
 - Keep memory as an orientation map; use source files for detailed APIs.
 
 ## To Be Verified
