@@ -60,12 +60,21 @@ Run the local `kind` Helm smoke test:
 OPENAI_API_KEY=... scripts/test-kind-langchain-service.sh
 ```
 
+Expose repo-local skills to coding agents:
+
+```bash
+mkdir -p .agents/skills .claude/skills
+ln -s ../../skills/mementum-memory .agents/skills/mementum-memory
+ln -s ../../skills/mementum-memory .claude/skills/mementum-memory
+```
+
 ## Workflow Notes
 
 - The default pytest configuration excludes `require_env`, so normal test runs should not call real providers.
 - Runtime config accepts `--config` for YAML files and `--env` for env-style files; environment variables matching top-level config fields override file settings.
 - Helm deploys render non-secret `appConfig` into a ConfigMap and inject secrets through `envFrom`.
 - The `kind` smoke-test script requires Docker, kind, kubectl, helm, curl, and `OPENAI_API_KEY`.
+- Repo-local skill sources live under `skills/`; agent-specific discovery folders should symlink to them rather than copying skill files.
 
 ## Source Pointers
 
@@ -78,6 +87,8 @@ OPENAI_API_KEY=... scripts/test-kind-langchain-service.sh
 - `scripts/test-kind-langchain-service.sh`
 - `deploy/langchain-service/templates/deployment.yaml`
 - `deploy/langchain-service/values.yaml`
+- `README.md`
+- `skills/mementum-memory/SKILL.md`
 
 ## To Be Verified
 

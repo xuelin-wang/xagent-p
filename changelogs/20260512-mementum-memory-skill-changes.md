@@ -28,6 +28,10 @@ Removed to eliminate duplicate workflow sources. Future memory-maintenance edits
 
 Updates the prompt-library structure so it no longer advertises maintenance prompts. It now points project-memory maintenance readers to the repo-local skill.
 
+### `README.md`
+
+Adds setup commands for exposing the repo-local skill to Codex and Claude Code through each tool's project skill discovery directory, using symlinks so `skills/mementum-memory/` remains the source of truth.
+
 ### `AGENTS.md` and `CLAUDE.md`
 
 Update agent guidance to distinguish general reusable prompts from memory-maintenance skill workflows.
