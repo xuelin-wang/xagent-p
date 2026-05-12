@@ -9,14 +9,17 @@ This directory contains reusable prompts for common coding-agent workflows.
 
 Prompts can reference project memory. Project memory should not store full reusable workflow prompts.
 
+Project-memory maintenance workflows live in the repo-local `skills/mementum-memory/` skill, not in this prompt library.
+
 ## Structure
 
 ```text
 prompts/
   workflows/    # task execution prompts
   reviews/      # review and comparison prompts
-  maintenance/  # project-memory and repository-maintenance prompts
   templates/    # prompt-authoring templates
+skills/
+  mementum-memory/  # project-memory maintenance skill and workflow references
 ```
 
 ## How to Use
@@ -43,15 +46,6 @@ Reviews:
 - `reviews/compare-branches.md`
 - `reviews/security-review.md`
 - `reviews/test-coverage-review.md`
-
-Maintenance:
-
-- `maintenance/update-project-memory.md`
-- `maintenance/refresh-project-state.md`
-- `maintenance/refresh-project-memory.md`
-- `maintenance/refresh-codebase-map.md`
-- `maintenance/synthesize-memories.md`
-- `maintenance/prune-stale-memory.md`
 
 ## Maintenance
 
