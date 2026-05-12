@@ -7,6 +7,7 @@
   - A provider-pluggable LLM wrapper with OpenAI and Anthropic providers.
   - A minimal FastAPI LangChain service packaged as `projects/langchain_service`.
 - Project memory lives under `mementum/` and is for engineering context only.
+- Reusable coding-agent workflow prompts live under `prompts/`; project memory should point to them rather than storing full reusable prompts.
 
 ## Current Focus
 
@@ -32,6 +33,7 @@
 - `AGENTS.md` is the shared agent guidance source; `CLAUDE.md` imports it.
 - LLM provider mutation operations should not be retried automatically without caller-level idempotency or deduplication.
 - Native batch callers provide `items`; public pre-uploaded batch input-file support was removed.
+- Reusable coding-agent workflow prompts belong under `prompts/`, separate from `mementum/` project memory.
 
 ## Source Pointers
 
@@ -42,3 +44,4 @@
 - `changelogs/20250509-llm-api-layer-changes.md`
 - `AGENTS.md`
 - `CLAUDE.md`
+- `prompts/README.md`
