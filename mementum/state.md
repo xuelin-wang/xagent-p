@@ -19,6 +19,7 @@
 
 - Verify whether there is intended CI outside this repository; no `.github/` workflow files were found.
 - Fill in lint/type-check commands if the project adopts dedicated tools.
+- If staged changelog deletions are intentional, update memory pages that still cite those historical changelog files.
 - Keep updating memory only when a durable implementation lesson or design decision is learned.
 
 ## Blockers / Unknowns
@@ -26,6 +27,7 @@
 - CI configuration is not present in the checked-out repo.
 - No dedicated lint or type-check command is configured in `pyproject.toml`.
 - `README.md` still contains TODO-level notes for logging/tracing work.
+- Several memory pages still reference historical changelog files that are currently absent from the index; verify whether those changelogs should be restored or the memory source pointers should be updated.
 
 ## Recent Decisions
 
@@ -41,7 +43,10 @@
 - `pyproject.toml`
 - `README.md`
 - `projects/langchain_service/README.md`
-- `changelogs/20250509-llm-api-layer-changes.md`
+- `mementum/knowledge/architecture-decisions.md`
+- `mementum/knowledge/codebase-map.md`
+- `mementum/knowledge/open-questions.md`
+- `mementum/knowledge/development-workflows.md`
 - `AGENTS.md`
 - `CLAUDE.md`
 - `prompts/README.md`

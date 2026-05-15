@@ -33,12 +33,14 @@ Do not store secrets, credentials, personal data, customer data, production data
 
 ## Choose a Workflow
 
-- End-of-task memory decision: read `references/update-project-memory.md`.
-- Refresh current project state: read `references/refresh-project-state.md`.
-- Refresh broader project memory: read `references/refresh-project-memory.md`.
-- Refresh the codebase map: read `references/refresh-codebase-map.md`.
-- Synthesize repeated memories into knowledge: read `references/synthesize-memories.md`.
-- Prune stale or unsafe memory: read `references/prune-stale-memory.md`.
+Prefer these action words when choosing the workflow:
+
+- `refresh state`: refresh current project state; read `references/refresh-project-state.md`.
+- `refresh codemap`: refresh the codebase map; read `references/refresh-codebase-map.md`.
+- `refresh`: refresh broader project memory; read `references/refresh-project-memory.md`.
+- `decide`: make an end-of-task memory decision; read `references/update-project-memory.md`.
+- `synthesize`: synthesize repeated memories into knowledge; read `references/synthesize-memories.md`.
+- `prune`: prune stale or unsafe memory; read `references/prune-stale-memory.md`.
 
 Read only the reference needed for the user's request.
 
