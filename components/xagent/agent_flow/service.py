@@ -3,7 +3,11 @@ from __future__ import annotations
 from typing import Protocol
 from uuid import uuid4
 
-from xagent.agent_flow.config import AgentFlowAppConfig, AgentModelConfig
+from xagent.agent_flow.config import (
+    AgentFlowAppConfig,
+    AgentModelConfig,
+    SubagentConfig,
+)
 from xagent.agent_flow.llm_adapter import AgentFlowLLMAdapter
 from xagent.agent_flow.models import AgentFlowState, RunStatus
 from xagent.agent_flow.planner import (
@@ -12,7 +16,11 @@ from xagent.agent_flow.planner import (
     PlannerExecutor,
 )
 from xagent.agent_flow.runtime import AgentFlowRuntime
-from xagent.agent_flow.subagents import FlowSubagent, fake_subagents_from_config
+from xagent.agent_flow.subagents import (
+    FakeFlowSubagent,
+    FlowSubagent,
+    LLMFlowSubagent,
+)
 from xagent.agent_flow.summary import (
     FakeSummaryExecutor,
     LLMSummaryExecutor,
@@ -95,7 +103,7 @@ class AgentFlowService:
             step_repository=step_repository,
             checkpoint_repository=checkpoint_repository,
             planner=planner or executor_factory.planner(),
-            subagents=subagents or fake_subagents_from_config(config.subagents),
+            subagents=subagents or executor_factory.subagents(),
             summary=summary or executor_factory.summary(),
         )
         return cls(
@@ -155,6 +163,24 @@ class AgentFlowExecutorFactory:
             return FakeSummaryExecutor()
         return LLMSummaryExecutor(
             config=self._config.summary,
+            llm=self._adapter(model_config),
+        )
+
+    def subagents(self) -> dict[str, FlowSubagent]:
+        return {
+            name: self._subagent(config)
+            for name, config in self._config.subagents.items()
+        }
+
+    def _subagent(self, config: SubagentConfig) -> FlowSubagent:
+        model_config = self._model_config(config.model)
+        if model_config.provider == "fake":
+            return FakeFlowSubagent(
+                name=config.name,
+                description=config.description,
+            )
+        return LLMFlowSubagent(
+            config=config,
             llm=self._adapter(model_config),
         )
 

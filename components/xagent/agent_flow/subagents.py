@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from typing import Protocol
 
 from xagent.agent_flow.config import SubagentConfig
+from xagent.agent_flow.llm_adapter import AgentFlowLLMAdapter, read_prompt_template
 from xagent.agent_flow.models import (
     AgentError,
     AgentFlowState,
@@ -64,6 +65,54 @@ class FakeFlowSubagent:
                 message=content,
                 retryable=False,
             ),
+        )
+
+
+class LLMFlowSubagent:
+    def __init__(
+        self,
+        *,
+        config: SubagentConfig,
+        llm: AgentFlowLLMAdapter,
+    ):
+        self.name = config.name
+        self.description = config.description
+        self._config = config
+        self._llm = llm
+
+    async def ainvoke(
+        self,
+        *,
+        state: AgentFlowState,
+        selection: PlanSubagentSelection,
+    ) -> SubagentResult:
+        content = await self._llm.generate_text(
+            model_name=self._config.model,
+            system_prompt=read_prompt_template(self._config.prompt_template),
+            user_prompt=self._render_user_prompt(state=state, selection=selection),
+            metadata={
+                "agent_flow_run_id": state.run_id,
+                "agent_flow_stage": "subagent",
+                "agent_flow_subagent": self.name,
+            },
+        )
+        return SubagentResult(
+            name=self.name,
+            status="completed",
+            content=content,
+        )
+
+    def _render_user_prompt(
+        self,
+        *,
+        state: AgentFlowState,
+        selection: PlanSubagentSelection,
+    ) -> str:
+        return (
+            f"User query:\n{state.user_query}\n\n"
+            f"Iteration: {state.current_iteration}\n\n"
+            f"Planner reason:\n{selection.reason or 'No reason provided.'}\n\n"
+            f"Input hint:\n{selection.input_hint or 'No input hint provided.'}"
         )
 
 

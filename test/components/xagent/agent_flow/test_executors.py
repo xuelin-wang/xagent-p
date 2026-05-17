@@ -1,6 +1,10 @@
 import asyncio
+from pathlib import Path
 
-from xagent.agent_flow.config import SubagentConfig
+from test.components.xagent.agent_flow.test_llm_adapter import FakeLLMProvider
+
+from xagent.agent_flow.config import AgentModelConfig, SubagentConfig
+from xagent.agent_flow.llm_adapter import AgentFlowLLMAdapter
 from xagent.agent_flow.models import (
     AgentFlowIteration,
     AgentFlowState,
@@ -9,7 +13,11 @@ from xagent.agent_flow.models import (
     SummaryDecision,
 )
 from xagent.agent_flow.planner import FakePlannerExecutor, FakePlannerRule
-from xagent.agent_flow.subagents import FakeFlowSubagent, fake_subagents_from_config
+from xagent.agent_flow.subagents import (
+    FakeFlowSubagent,
+    LLMFlowSubagent,
+    fake_subagents_from_config,
+)
 from xagent.agent_flow.summary import FakeSummaryExecutor
 
 
@@ -172,3 +180,46 @@ async def _fake_summary_supports_replan_and_fail_decisions() -> None:
     assert replan.decision is SummaryDecision.REPLAN
     assert replan.suggested_replan == {"reason": "fake_replan"}
     assert fail.decision is SummaryDecision.FAIL
+
+
+def test_llm_subagent_generates_text_result(tmp_path: Path) -> None:
+    asyncio.run(_llm_subagent_generates_text_result(tmp_path))
+
+
+async def _llm_subagent_generates_text_result(tmp_path: Path) -> None:
+    prompt = tmp_path / "manuals.md"
+    prompt.write_text("manual system", encoding="utf-8")
+    provider = FakeLLMProvider()
+    subagent = LLMFlowSubagent(
+        config=SubagentConfig(
+            name="manuals",
+            description="Search service manuals.",
+            prompt_template=str(prompt),
+            model="reasoning",
+        ),
+        llm=AgentFlowLLMAdapter(
+            provider=provider,
+            models={"reasoning": AgentModelConfig(model="fake-reasoning")},
+        ),
+    )
+
+    result = await subagent.ainvoke(
+        state=AgentFlowState(run_id="run_1", user_query="diagnose no start"),
+        selection=PlanSubagentSelection(
+            name="manuals",
+            reason="manuals are relevant",
+            input_hint="inspect starter",
+        ),
+    )
+
+    assert result.status == "completed"
+    assert result.content == "ok"
+    request = provider.generate_requests[0]
+    assert request.messages[0].content == "manual system"
+    assert "manuals are relevant" in str(request.messages[1].content)
+    assert "inspect starter" in str(request.messages[1].content)
+    assert request.metadata == {
+        "agent_flow_run_id": "run_1",
+        "agent_flow_stage": "subagent",
+        "agent_flow_subagent": "manuals",
+    }

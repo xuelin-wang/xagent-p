@@ -139,8 +139,10 @@ async def _service_uses_llm_executors_for_non_fake_model_config(
 ) -> None:
     planner_prompt = tmp_path / "planner.md"
     summary_prompt = tmp_path / "summary.md"
+    subagent_prompt = tmp_path / "manuals.md"
     planner_prompt.write_text("planner system", encoding="utf-8")
     summary_prompt.write_text("summary system", encoding="utf-8")
+    subagent_prompt.write_text("manual system", encoding="utf-8")
     llm_factory = FakeLLMFactory()
     service = AgentFlowService.in_memory(
         AgentFlowAppConfig(
@@ -156,7 +158,8 @@ async def _service_uses_llm_executors_for_non_fake_model_config(
                 "manuals": SubagentConfig(
                     name="manuals",
                     description="Search service manuals.",
-                    prompt_template="prompts/agent_flow/subagents/manuals.md",
+                    prompt_template=str(subagent_prompt),
+                    model="reasoning",
                 )
             },
             models={
@@ -174,10 +177,16 @@ async def _service_uses_llm_executors_for_non_fake_model_config(
 
     assert result.status is RunStatus.COMPLETED
     assert result.final_response == "summary answer"
-    assert [config.provider for config in llm_factory.configs] == ["openai", "openai"]
+    assert [config.provider for config in llm_factory.configs] == [
+        "openai",
+        "openai",
+        "openai",
+    ]
     assert [config.default_model for config in llm_factory.configs] == [
+        "gpt-test",
         "gpt-test",
         "gpt-test",
     ]
     assert len(llm_factory.providers[0].structured_requests) == 1
-    assert len(llm_factory.providers[1].structured_requests) == 1
+    assert len(llm_factory.providers[1].generate_requests) == 1
+    assert len(llm_factory.providers[2].structured_requests) == 1
