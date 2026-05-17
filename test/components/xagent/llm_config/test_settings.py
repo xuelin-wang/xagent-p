@@ -20,18 +20,15 @@ def test_provider_config_defaults() -> None:
 
 def test_provider_config_subclasses_have_expected_env_metadata() -> None:
     openai_extra = cast(
-        dict[str, object], OpenAIProviderConfig.model_fields["api_key"].json_schema_extra
+        dict[str, object],
+        OpenAIProviderConfig.model_fields["api_key"].json_schema_extra,
     )
     anthropic_extra = cast(
         dict[str, object],
         AnthropicProviderConfig.model_fields["api_key"].json_schema_extra,
     )
-    assert (
-        openai_extra["env_var"] == DEFAULT_API_KEY_ENV["openai"]
-    )
-    assert (
-        anthropic_extra["env_var"] == DEFAULT_API_KEY_ENV["anthropic"]
-    )
+    assert openai_extra["env_var"] == DEFAULT_API_KEY_ENV["openai"]
+    assert anthropic_extra["env_var"] == DEFAULT_API_KEY_ENV["anthropic"]
 
 
 def test_build_provider_config_uses_provider_specific_subclass() -> None:

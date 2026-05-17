@@ -55,9 +55,7 @@ def validate_provider_api_key_env_var(
 
     extra = api_key_field.json_schema_extra if api_key_field is not None else None
     if not isinstance(extra, dict):
-        raise ValueError(
-            "Invalid provider config: api_key metadata must be a mapping."
-        )
+        raise ValueError("Invalid provider config: api_key metadata must be a mapping.")
     env_var = extra.get("env_var")
     if env_var != expected:
         raise ValueError(

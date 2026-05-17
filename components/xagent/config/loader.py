@@ -24,7 +24,9 @@ def _parse_env_value(raw_value: str) -> Any:
         return raw_value
 
 
-def _assign_path_value(target: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
+def _assign_path_value(
+    target: dict[str, Any], path: tuple[str, ...], value: Any
+) -> None:
     current = target
     for part in path[:-1]:
         next_value = current.get(part)

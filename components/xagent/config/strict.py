@@ -79,9 +79,7 @@ def collect_model_env_var_paths(
     visited: set[type[StrictConfigModel]] = set()
     env_var_paths: dict[str, tuple[str, ...]] = {}
 
-    def _walk(
-        current_model: type[StrictConfigModel], prefix: tuple[str, ...]
-    ) -> None:
+    def _walk(current_model: type[StrictConfigModel], prefix: tuple[str, ...]) -> None:
         if current_model in visited:
             return
         visited.add(current_model)
