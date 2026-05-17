@@ -1,0 +1,48 @@
+workflow:
+  name: local_fake_agent_flow
+  max_iterations: 3
+  subagent_execution_mode: parallel
+  continue_on_subagent_failure: true
+  max_subagents_per_iteration: 5
+  max_tool_rounds_per_subagent: 3
+
+planner:
+  name: planner
+  prompt_template: prompts/agent_flow/planner.md
+  model: default_reasoning
+  max_attempts: 2
+
+summary:
+  name: summary
+  prompt_template: prompts/agent_flow/summary.md
+  model: default_reasoning
+  max_attempts: 2
+
+subagents:
+  manuals:
+    name: manuals
+    description: Search service manuals and procedures.
+    prompt_template: prompts/agent_flow/subagents/manuals.md
+    model: default_reasoning
+    tools: []
+    timeout_seconds: 60
+    max_attempts: 2
+  repair_history:
+    name: repair_history
+    description: Search prior repair history for similar symptoms.
+    prompt_template: prompts/agent_flow/subagents/repair_history.md
+    model: default_reasoning
+    tools: []
+    timeout_seconds: 60
+    max_attempts: 2
+
+models:
+  default_reasoning:
+    provider: fake
+    model: fake-reasoning
+    temperature: 0.0
+    timeout_seconds: 60
+
+persistence:
+  backend: memory
+
