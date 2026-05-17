@@ -13,6 +13,7 @@ from xagent.agent_flow.models import (
     FlowStage,
     PlanOutput,
     RunStatus,
+    StepStatus,
     SubagentResult,
     SummaryDecision,
     SummaryOutput,
@@ -24,6 +25,7 @@ from xagent.agent_flow.summary import SummaryExecutor
 from xagent.agent_persistence.repositories import (
     CheckpointRepository,
     RunRepository,
+    StepRecord,
     StepRepository,
 )
 
@@ -42,6 +44,7 @@ class AgentFlowRuntime:
     ):
         self._config = config
         self._run_repository = run_repository
+        self._step_repository = step_repository
         self._checkpoint_repository = checkpoint_repository
         self._planner = planner
         self._subagents = dict(subagents)
@@ -54,6 +57,7 @@ class AgentFlowRuntime:
     async def resume(self, state: AgentFlowState) -> AgentFlowState:
         if state.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
             return state
+        await self._reconcile_succeeded_steps(state)
         return await self._run_loop(state, create_run=False)
 
     async def _run_loop(
@@ -327,3 +331,29 @@ class AgentFlowRuntime:
             stage=state.current_stage,
             state=state,
         )
+
+    async def _reconcile_succeeded_steps(self, state: AgentFlowState) -> None:
+        steps = await self._step_repository.get_steps_for_run_iteration(
+            state.run_id,
+            state.current_iteration,
+        )
+        iteration = state.get_or_create_current_iteration()
+        for step in steps:
+            if step.status is not StepStatus.SUCCEEDED or step.output_json is None:
+                continue
+            self._hydrate_succeeded_step(iteration, step)
+
+    def _hydrate_succeeded_step(
+        self,
+        iteration: AgentFlowIteration,
+        step: StepRecord,
+    ) -> None:
+        if step.step_name == "planner":
+            iteration.plan = PlanOutput.model_validate(step.output_json)
+        elif step.step_name.startswith("subagent:"):
+            result = SubagentResult.model_validate(step.output_json)
+            iteration.subagent_results[result.name] = result
+            if result.error is not None and result.error not in iteration.errors:
+                iteration.errors.append(result.error)
+        elif step.step_name == "summary":
+            iteration.summary = SummaryOutput.model_validate(step.output_json)

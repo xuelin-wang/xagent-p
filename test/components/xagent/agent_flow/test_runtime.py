@@ -8,7 +8,10 @@ from xagent.agent_flow.config import (
 from xagent.agent_flow.models import (
     AgentFlowIteration,
     AgentFlowState,
+    PlanOutput,
+    PlanSubagentSelection,
     RunStatus,
+    SubagentResult,
     SummaryDecision,
     SummaryOutput,
 )
@@ -21,6 +24,20 @@ from xagent.agent_persistence.memory import (
     InMemoryRunRepository,
     InMemoryStepRepository,
 )
+
+
+class RaisingSubagent:
+    name = "manuals"
+    description = "Raises if invoked."
+
+    async def ainvoke(
+        self,
+        *,
+        state: AgentFlowState,
+        selection: PlanSubagentSelection,
+    ) -> SubagentResult:
+        _ = (state, selection)
+        raise AssertionError("succeeded subagent step should have been skipped")
 
 
 class SequencedSummaryExecutor:
@@ -162,3 +179,75 @@ async def _runtime_fails_when_replan_exhausts_iteration_budget() -> None:
         "Agent flow reached the maximum iteration count."
     )
     assert result.errors[-1].details == {"max_iterations": 1}
+
+
+def test_runtime_resume_reconciles_succeeded_steps_from_stale_checkpoint() -> None:
+    asyncio.run(_runtime_resume_reconciles_succeeded_steps_from_stale_checkpoint())
+
+
+async def _runtime_resume_reconciles_succeeded_steps_from_stale_checkpoint() -> None:
+    config = _config()
+    run_repository = InMemoryRunRepository()
+    step_repository = InMemoryStepRepository()
+    checkpoint_repository = InMemoryCheckpointRepository()
+    state = AgentFlowState(run_id="run_1", user_query="diagnose no start")
+    await run_repository.create_run(state)
+    await checkpoint_repository.save_checkpoint(
+        run_id=state.run_id,
+        iteration=state.current_iteration,
+        checkpoint_name="start",
+        stage=state.current_stage,
+        state=state,
+    )
+    plan = PlanOutput(
+        goal="Answer user query: diagnose no start",
+        selections=[PlanSubagentSelection(name="manuals")],
+    )
+    plan_step = await step_repository.create_or_get_step(
+        run_id=state.run_id,
+        iteration=0,
+        step_name="planner",
+        step_type="planner",
+        input_json={"query": state.user_query},
+        max_attempts=1,
+        idempotency_key="run_1:0:planner",
+    )
+    await step_repository.mark_step_succeeded(
+        plan_step.step_id,
+        plan.model_dump(mode="json"),
+    )
+    subagent_step = await step_repository.create_or_get_step(
+        run_id=state.run_id,
+        iteration=0,
+        step_name="subagent:manuals",
+        step_type="subagent",
+        input_json={"name": "manuals"},
+        max_attempts=1,
+        idempotency_key="run_1:0:subagent:manuals",
+    )
+    await step_repository.mark_step_succeeded(
+        subagent_step.step_id,
+        SubagentResult(
+            name="manuals",
+            status="completed",
+            content="recovered manual result",
+        ).model_dump(mode="json"),
+    )
+    runtime = AgentFlowRuntime(
+        config=config,
+        run_repository=run_repository,
+        step_repository=step_repository,
+        checkpoint_repository=checkpoint_repository,
+        planner=FakePlannerExecutor(selection_names=["manuals"]),
+        subagents={"manuals": RaisingSubagent()},
+        summary=FakeSummaryExecutor(),
+    )
+
+    result = await runtime.resume(state)
+
+    assert result.status is RunStatus.COMPLETED
+    assert result.final_response == "recovered manual result"
+    assert result.iterations[0].plan == plan
+    assert result.iterations[0].subagent_results["manuals"].content == (
+        "recovered manual result"
+    )
