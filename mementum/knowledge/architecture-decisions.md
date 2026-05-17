@@ -121,7 +121,7 @@ Source pointers:
 
 ## 2026-05-17 - Plan Custom Durable Agent Runtime Without LangGraph
 
-Status: planned
+Status: accepted
 
 Decision:
 - Design a custom durable agent-flow runtime under the existing `xagent` Polylith layout rather than adopting LangGraph or adding a parallel `src/` package.
@@ -144,3 +144,32 @@ Source pointers:
 - `components/xagent/llm_contracts/`
 - `components/xagent/llm_registry/`
 - `components/xagent/llm_tools/`
+
+## 2026-05-17 - Implement Durable Agent Flow Runtime With Thin LLM Adapters
+
+Status: accepted
+
+Decision:
+- Implement the durable agent-flow runtime under `components/xagent/agent_flow/` with memory-backed repositories, resume reconciliation, CLI, and HTTP entrypoints.
+- Keep `AgentFlowLLMAdapter` thin over the existing `LLMProvider` protocol instead of introducing a parallel LLM stack.
+- Select fake or provider-backed planner, subagent, and summary executors from agent-flow model config.
+- Reconcile succeeded step records into state before resuming a run so partially completed work can be skipped safely.
+
+Rationale:
+- The existing provider contracts already cover text and structured generation.
+- A thin adapter keeps the runtime aligned with the existing provider layer and avoids duplicate abstractions.
+- Resume needs to recover step-level successes, not just checkpoint state, to survive crashes between substeps.
+
+Implications:
+- `fake` model configs remain the default for deterministic local runs.
+- Provider-backed executors should stay configuration-driven and not be hard-coded into runtime loops.
+- Resume logic must continue to prefer persisted successful steps over rerunning them.
+
+Source pointers:
+- `components/xagent/agent_flow/llm_adapter.py`
+- `components/xagent/agent_flow/service.py`
+- `components/xagent/agent_flow/runtime.py`
+- `components/xagent/agent_flow/planner.py`
+- `components/xagent/agent_flow/subagents.py`
+- `components/xagent/agent_flow/summary.py`
+- `components/xagent/agent_persistence/repositories.py`

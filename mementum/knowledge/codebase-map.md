@@ -21,7 +21,7 @@ This is a Python `xagent` repository using a loose Polylith structure.
 High-value areas:
 
 - `components/xagent/`: reusable bricks under the shared `xagent` namespace.
-- `bases/xagent/`: executable entry points, including the HTTP API and LLM CLI.
+- `bases/xagent/`: executable entry points, including the HTTP API, LLM CLI, and agent-flow CLI.
 - `projects/langchain_service/`: Docker packaging for the FastAPI LangChain service.
 - `deploy/langchain-service/`: Helm chart and environment values for Kubernetes deployment.
 - `test/`: tests mirror base/component structure; live provider tests live under `test/integration/`.
@@ -34,6 +34,7 @@ Important entry points:
 - `xagent-langchain-api` -> `xagent.api_http.main:main`.
 - `xagent-langchain-sample` -> `xagent.langchain_cli.main:main`.
 - `xagent-llm` -> `xagent.llm_cli.main:main`.
+- `xagent-agent-flow` -> `xagent.agent_flow_cli.main:main`.
 - Docker service entrypoint is `xagent-langchain-api`.
 
 Architectural boundaries:
@@ -42,6 +43,9 @@ Architectural boundaries:
 - `llm_registry.provider_protocol` defines the provider protocol and does not import providers.
 - `llm_registry.factory.default_registry()` imports built-in providers lazily.
 - Provider components map common contracts to provider-specific APIs and preserve raw responses.
+- `components/xagent/agent_flow/` now owns the durable runtime surface: state/config/models, step runner, resume reconciliation, LLM adapter, planner/subagent/summary executors, and the service facade.
+- `components/xagent/agent_persistence/` owns the runtime repositories used by the durable runtime.
+- `bases/xagent/api_http/` now exposes both the legacy `/query` surface and the new `/agent-flow/*` routes.
 
 ## Generated or Do-Not-Edit Areas
 
@@ -69,6 +73,6 @@ Architectural boundaries:
 
 - Do not add `src/` or `src/common_llm` style layout unless the Polylith configuration changes.
 - Before changing LLM provider behavior, read the relevant provider tests and architecture decisions in project memory.
-- The custom durable agent runtime is design-stage only; read `mementum/knowledge/agent-runtime-framework-design.md` before implementing it.
+- The custom durable agent runtime is implemented; read `mementum/knowledge/agent-runtime-framework-design.md` before extending it.
 - Use `prompts/` for reusable coding-agent workflows and `skills/mementum-memory/` for project-memory maintenance workflows.
 - Keep memory as an orientation map; use source files for detailed APIs.

@@ -19,6 +19,7 @@ dependencies = [
 xagent-langchain-api = "xagent.api_http.main:main"
 xagent-langchain-sample = "xagent.langchain_cli.main:main"
 xagent-llm = "xagent.llm_cli.main:main"
+xagent-agent-flow = "xagent.agent_flow_cli.main:main"
 
 [dependency-groups]
 dev = [

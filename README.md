@@ -2,6 +2,14 @@
 * add logs, phoenix tracing, otel non-agent tracing
 * test signoz(?) integration, and GCP log collection flow
 
+## Local Agent Flow Runtime
+
+Run the custom agent-flow runtime with deterministic fake providers:
+
+```bash
+uv run --active xagent-agent-flow --config development/config/agent-flow.local.yaml run "diagnose intermittent no-start"
+```
+
 ## Repo Skills Setup
 
 Repo-local skill sources live under `skills/`. The current repo skill is:

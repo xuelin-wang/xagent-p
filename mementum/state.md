@@ -6,20 +6,21 @@
 - The active implementation includes two main surfaces:
   - A provider-pluggable LLM wrapper with OpenAI and Anthropic providers.
   - A minimal FastAPI LangChain service packaged as `projects/langchain_service`.
-- A custom durable agent-flow runtime is currently design-stage only; the committed design lives in `mementum/knowledge/agent-runtime-framework-design.md`.
+- A custom durable agent-flow runtime is now implemented under `components/xagent/agent_flow/` with CLI and HTTP entrypoints under `bases/xagent/`.
 - Project memory lives under `mementum/` and is for engineering context only.
 - Reusable coding-agent workflow prompts live under `prompts/`; project-memory maintenance workflows live under `skills/mementum-memory/`.
 
 ## Current Focus
 
 - Preserve the Polylith component boundaries and provider-specific LLM behavior.
-- For the planned custom agent-flow runtime, reuse or extend existing xagent features before adding parallel abstractions.
+- For the agent-flow runtime, reuse or extend existing xagent features before adding parallel abstractions.
+- Keep the runtime deterministic by default with fake planner/subagent/summary executors, and select provider-backed executors from model config when requested.
 - Keep tests deterministic by default; live provider tests are opt-in through the `require_env` marker.
 - Keep deployment secrets outside committed values files except disposable local `kind` overrides.
 
 ## Next Steps
 
-- Keep updating memory only when a durable implementation lesson or design decision is learned.
+- Add memory only when a durable implementation lesson or design decision is learned.
 
 ## Blockers / Unknowns
 
@@ -36,7 +37,8 @@
 - The mementum skill requires explicit user approval before any write to `mementum/`; enforced in SKILL.md and all six reference workflow files.
 - GitHub Actions CI added at `.github/workflows/ci.yml`; runs ruff check, ruff format --check, mypy, and pytest on every push and PR to main.
 - pr-desc skill added at `skills/pr-desc/`; generates concise reviewer-focused PR descriptions from the current branch diff against main.
-- Agent runtime framework design added under `mementum/knowledge/agent-runtime-framework-design.md`; planned runtime should avoid LangGraph, coexist with the existing LangChain sample, follow Polylith layout, and prefer reuse of existing xagent features.
+- Agent runtime framework design added under `mementum/knowledge/agent-runtime-framework-design.md`; the implemented runtime avoids LangGraph, coexists with the existing LangChain sample, follows Polylith layout, and prefers reuse of existing xagent features.
+- Durable agent-flow runtime implemented under `components/xagent/agent_flow/` with memory-backed repositories, resume reconciliation from succeeded step records, thin LLM adapter over the existing `LLMProvider` protocol, and service/CLI/HTTP entrypoints.
 
 ## Source Pointers
 
