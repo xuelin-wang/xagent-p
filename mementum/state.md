@@ -18,10 +18,11 @@
 - Keep the runtime deterministic by default with fake planner/subagent/summary executors, and select provider-backed executors from model config when requested.
 - Keep tests deterministic by default; live provider tests are opt-in through the `require_env` marker.
 - Keep deployment secrets outside committed values files except disposable local `kind` overrides.
+- The next active feature slice is the highly configurable agentic app design under `mementum/knowledge/highly-configurable-agentic-app-implementation-design.md`, starting with config validation, enabled subagents, explicit unknown-subagent policy, prompt history, and timeout enforcement.
 
 ## Next Steps
 
-- Add memory only when a durable implementation lesson or design decision is learned.
+- Implement the highly configurable agentic app in the order recorded in `mementum/knowledge/highly-configurable-agentic-app-implementation-design.md`.
 
 ## Blockers / Unknowns
 
