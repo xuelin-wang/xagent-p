@@ -63,6 +63,12 @@ uv run --active xagent-llm --provider openai text "hello"
 uv run --active xagent-llm --provider anthropic text "hello"
 ```
 
+Run the custom agent-flow CLI with the local deterministic config:
+
+```bash
+uv run --active xagent-agent-flow --config development/config/agent-flow.local.yaml run "diagnose intermittent no-start"
+```
+
 Build the deployable service image:
 
 ```bash
