@@ -1,11 +1,11 @@
 from xagent.board.core import empty_board
 
 
-def is_incomplete(row):
+def is_incomplete(row: list[int]) -> bool:
     return 0 in row
 
 
-def clear_rows(board):
+def clear_rows(board: list[list[int]]) -> list[list[int]]:
     width = len(board[0])
     height = len(board)
     remaining_rows = [row for row in board if is_incomplete(row)]

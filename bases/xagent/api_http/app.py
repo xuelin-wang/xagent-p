@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_openai import ChatOpenAI
 from openai import AuthenticationError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from xagent.config import StrictConfigModel
 from xagent.langchain_agents.app import LangChainMultiAgentApp
@@ -38,7 +38,7 @@ class ApiHttpConfig(StrictConfigModel):
     openai_model: str = "gpt-4.1-mini"
     openai_embedding_model: str = "text-embedding-3-small"
     xagent_max_wait_seconds: float = 10.0
-    openai_api_key: str | None = None
+    openai_api_key: SecretStr | None = None
 
 
 def _raise_provider_auth_error(exc: AuthenticationError) -> None:

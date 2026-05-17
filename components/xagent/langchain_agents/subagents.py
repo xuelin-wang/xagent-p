@@ -6,6 +6,7 @@ from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_openai import OpenAIEmbeddings
+from pydantic import SecretStr
 
 
 class Subagent(Protocol):
@@ -20,7 +21,7 @@ class RAGSubagent:
     answer_model: Any
     documents: list[Document]
     embedding_model: str = "text-embedding-3-small"
-    api_key: str | None = None
+    api_key: SecretStr | None = None
     name: str = "rag_researcher"
     description: str = (
         "Retrieves semantically similar documents and answers with grounded context."

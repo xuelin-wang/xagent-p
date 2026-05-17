@@ -1,6 +1,6 @@
 import json
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from xagent.llm_batch import (
     BatchCreateRequest,
@@ -161,7 +161,7 @@ def _is_embedding_body(body: dict[str, Any]) -> bool:
 
 def _error_message(error: Any) -> str | None:
     if isinstance(error, dict) and isinstance(error.get("message"), str):
-        return error["message"]
+        return cast(str, error["message"])
     return None
 
 

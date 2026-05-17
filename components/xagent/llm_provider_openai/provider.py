@@ -1,7 +1,9 @@
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import TypeVar
+from typing import Any, TypeVar, cast
 
 import httpx
+from pydantic import BaseModel
 
 from xagent.llm_batch import (
     BatchCreateRequest,
@@ -66,7 +68,7 @@ from xagent.llm_structured import (
     validate_structured_output,
 )
 
-T = TypeVar("T")
+T = TypeVar("T", bound=BaseModel)
 
 OPENAI_TEXT_MODELS = {
     "gpt-5.5",
@@ -146,7 +148,7 @@ class OpenAIProvider:
             assert_capability(caps, Capability.STRUCTURED_OUTPUT, operation="generate")
         return model
 
-    def _check_provider_tools(self, provider_tools: list, model: str) -> None:
+    def _check_provider_tools(self, provider_tools: list[Any], model: str) -> None:
         for tool in provider_tools:
             tool_type = getattr(tool, "type", None)
             if tool_type in OPENAI_PROVIDER_TOOL_TYPES:
@@ -242,7 +244,9 @@ class OpenAIProvider:
         response = await self._post_embeddings(payload, model)
         return response_from_openai_embeddings(response.json(), model)
 
-    async def _post_embeddings(self, payload: dict, model: str) -> httpx.Response:
+    async def _post_embeddings(
+        self, payload: dict[str, Any], model: str
+    ) -> httpx.Response:
         api_key = resolve_api_key(self.config)
         if api_key is None:
             raise AuthenticationError(
@@ -435,7 +439,7 @@ class OpenAIProvider:
                 purpose=FilePurpose.BATCH_INPUT,
             )
         )
-        payload = {
+        payload: dict[str, Any] = {
             "input_file_id": uploaded.file_id,
             "endpoint": endpoint,
             "completion_window": OPENAI_BATCH_COMPLETION_WINDOW,
@@ -469,7 +473,7 @@ class OpenAIProvider:
 
     async def _post_batch(
         self,
-        payload: dict,
+        payload: dict[str, Any],
         *,
         operation: str,
         path: str = "/batches",
@@ -625,7 +629,7 @@ class OpenAIProvider:
 
     async def _post_responses(
         self,
-        payload: dict,
+        payload: dict[str, Any],
         model: str,
         *,
         operation: str,
@@ -704,7 +708,7 @@ class OpenAIProvider:
         self,
         *,
         operation: str,
-        request,
+        request: Callable[[], Awaitable[httpx.Response]],
     ) -> httpx.Response:
         return await retry_async(
             request,
@@ -747,7 +751,7 @@ class OpenAIProvider:
         raise ProviderServerError(payload)
 
 
-def _safe_json(response: httpx.Response) -> dict | None:
+def _safe_json(response: httpx.Response) -> dict[str, Any] | None:
     try:
         loaded = response.json()
     except ValueError:
@@ -755,14 +759,14 @@ def _safe_json(response: httpx.Response) -> dict | None:
     return loaded if isinstance(loaded, dict) else None
 
 
-def _error_message(raw_error: dict | None) -> str | None:
+def _error_message(raw_error: dict[str, Any] | None) -> str | None:
     if not raw_error:
         return None
     error = raw_error.get("error")
     if isinstance(error, dict) and isinstance(error.get("message"), str):
-        return error["message"]
+        return cast(str, error["message"])
     if isinstance(raw_error.get("message"), str):
-        return raw_error["message"]
+        return cast(str, raw_error["message"])
     return None
 
 

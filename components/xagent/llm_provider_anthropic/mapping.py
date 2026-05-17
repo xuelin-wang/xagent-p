@@ -1,6 +1,6 @@
 import base64
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from xagent.llm_contracts import GenerateRequest, GenerateResponse, Message, Role, Usage
 from xagent.llm_files import (
@@ -241,10 +241,13 @@ def _extract_provider_tool_traces(raw: dict[str, Any]) -> list[ProviderToolTrace
                 pending[block["id"]] = trace
         elif block.get("type") == "web_search_tool_result":
             tool_use_id = block.get("tool_use_id")
-            trace = pending.get(tool_use_id) if isinstance(tool_use_id, str) else None
-            if trace is None:
-                trace = ProviderToolTrace(tool_type="web_search")
-                traces.append(trace)
+            pending_trace = (
+                pending.get(tool_use_id) if isinstance(tool_use_id, str) else None
+            )
+            if pending_trace is None:
+                pending_trace = ProviderToolTrace(tool_type="web_search")
+                traces.append(pending_trace)
+            trace = pending_trace
             trace.status = "completed"
             trace.output_summary = _web_search_output_summary(block)
             trace.citations = _web_search_citations(block)
@@ -266,7 +269,7 @@ def _normalize_provider_tool_type(name: Any) -> str:
 
 def _server_tool_input_summary(tool_input: Any) -> str | None:
     if isinstance(tool_input, dict) and isinstance(tool_input.get("query"), str):
-        return tool_input["query"]
+        return cast(str, tool_input["query"])
     return None
 
 
@@ -275,7 +278,7 @@ def _web_search_output_summary(block: dict[str, Any]) -> str | None:
     if isinstance(content, list):
         return f"{len(content)} result(s)"
     if isinstance(content, dict) and isinstance(content.get("error_code"), str):
-        return content["error_code"]
+        return cast(str, content["error_code"])
     return None
 
 

@@ -1,7 +1,7 @@
 import base64
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from xagent.llm_contracts import GenerateRequest, GenerateResponse, Message, Role, Usage
 from xagent.llm_files import (
@@ -156,7 +156,7 @@ def tool_choice_to_openai_tool_choice(tool_choice: Any) -> str | dict[str, Any]:
         if tool_choice.tool_name:
             return {"type": "function", "name": tool_choice.tool_name}
         return tool_choice.mode
-    return tool_choice
+    return cast(str | dict[str, Any], tool_choice)
 
 
 def response_format_to_openai_text_format(
@@ -310,9 +310,9 @@ def _provider_tool_citations(item: dict[str, Any]) -> list[Citation]:
 def _iter_provider_tool_sources(item: dict[str, Any]) -> list[Any]:
     action = item.get("action")
     if isinstance(action, dict) and isinstance(action.get("sources"), list):
-        return action["sources"]
+        return cast(list[Any], action["sources"])
     if isinstance(item.get("results"), list):
-        return item["results"]
+        return cast(list[Any], item["results"])
     return []
 
 

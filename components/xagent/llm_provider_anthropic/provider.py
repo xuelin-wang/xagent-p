@@ -1,6 +1,8 @@
-from typing import TypeVar
+from collections.abc import Awaitable, Callable
+from typing import Any, TypeVar, cast
 
 import httpx
+from pydantic import BaseModel
 
 from xagent.llm_batch import (
     BatchCreateRequest,
@@ -63,7 +65,7 @@ from xagent.llm_structured import (
 )
 from xagent.llm_tools import AppToolDefinition, ToolChoice
 
-T = TypeVar("T")
+T = TypeVar("T", bound=BaseModel)
 
 ANTHROPIC_TEXT_MODELS = {
     "claude-opus-4-7",
@@ -134,7 +136,7 @@ class AnthropicProvider:
             assert_capability(caps, Capability.STRUCTURED_OUTPUT, operation="generate")
         return model
 
-    def _check_provider_tools(self, provider_tools: list, model: str) -> None:
+    def _check_provider_tools(self, provider_tools: list[Any], model: str) -> None:
         for tool in provider_tools:
             tool_type = getattr(tool, "type", None)
             if tool_type in ANTHROPIC_PROVIDER_TOOL_TYPES:
@@ -454,7 +456,7 @@ class AnthropicProvider:
     async def _post_batch(
         self,
         path: str,
-        payload: dict,
+        payload: dict[str, Any],
         *,
         operation: str,
         files_api: bool = False,
@@ -580,7 +582,7 @@ class AnthropicProvider:
         self,
         *,
         operation: str,
-        request,
+        request: Callable[[], Awaitable[httpx.Response]],
     ) -> httpx.Response:
         return await retry_async(
             request,
@@ -627,7 +629,7 @@ class AnthropicProvider:
         raise ProviderServerError(payload)
 
 
-def _safe_json(response: httpx.Response) -> dict | None:
+def _safe_json(response: httpx.Response) -> dict[str, Any] | None:
     try:
         loaded = response.json()
     except ValueError:
@@ -635,14 +637,14 @@ def _safe_json(response: httpx.Response) -> dict | None:
     return loaded if isinstance(loaded, dict) else None
 
 
-def _error_message(raw_error: dict | None) -> str | None:
+def _error_message(raw_error: dict[str, Any] | None) -> str | None:
     if not raw_error:
         return None
     error = raw_error.get("error")
     if isinstance(error, dict) and isinstance(error.get("message"), str):
-        return error["message"]
+        return cast(str, error["message"])
     if isinstance(raw_error.get("message"), str):
-        return raw_error["message"]
+        return cast(str, raw_error["message"])
     return None
 
 
@@ -666,7 +668,7 @@ def _batch_uses_anthropic_uploaded_file(request: BatchCreateRequest) -> bool:
 
 def _structured_output_tool(
     request: StructuredGenerateRequest,
-    output_type: type,
+    output_type: type[BaseModel],
 ) -> AppToolDefinition:
     return AppToolDefinition(
         name=request.response_format.schema_name or output_type.__name__,
@@ -676,10 +678,12 @@ def _structured_output_tool(
     )
 
 
-def _structured_tool_input(response: GenerateResponse, tool_name: str) -> dict:
+def _structured_tool_input(
+    response: GenerateResponse, tool_name: str
+) -> dict[str, Any]:
     for call in response.app_tool_calls:
         if call.name == tool_name:
-            return call.arguments
+            return cast(dict[str, Any], call.arguments)
     raise StructuredOutputValidationError(
         LLMErrorPayload(
             provider=response.provider,

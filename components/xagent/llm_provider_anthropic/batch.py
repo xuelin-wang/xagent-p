@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from xagent.llm_batch import (
     BatchCreateRequest,
@@ -106,7 +106,7 @@ def _batch_result_item_from_line(line: str) -> BatchResultItem:
 
 def _result_error_message(result_type: Any, error: dict[str, Any] | None) -> str:
     if error and isinstance(error.get("message"), str):
-        return error["message"]
+        return cast(str, error["message"])
     if result_type == "canceled":
         return "Anthropic batch item was canceled."
     if result_type == "expired":

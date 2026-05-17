@@ -9,5 +9,5 @@ T = 6
 O = 7
 
 
-def piece(p, rotation):
-    return shape.pieces[p][rotation]
+def piece(p: int, rotation: int) -> list[list[int]]:
+    return shape.pieces[p][rotation]  # type: ignore[index]

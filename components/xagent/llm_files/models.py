@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -73,7 +73,7 @@ class UploadedFile(BaseModel):
     size_bytes: int | None = None
     purpose: FilePurpose
     expires_at: datetime | None = None
-    raw_response: dict | None = None
+    raw_response: dict[str, Any] | None = None
 
 
 class FileDeleteRequest(BaseModel):
@@ -87,4 +87,4 @@ class GeneratedFile(BaseModel):
     filename: str | None = None
     media_type: str | None = None
     bytes_data: bytes | None = None
-    raw: dict | None = None
+    raw: dict[str, Any] | None = None

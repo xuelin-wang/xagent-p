@@ -1,3 +1,4 @@
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -5,7 +6,7 @@ from xagent.agent_app.model import PlannerStep, SubagentReply
 
 
 class LangChainResponseMerger:
-    def __init__(self, model):
+    def __init__(self, model: BaseChatModel):
         self._chain = (
             ChatPromptTemplate.from_messages(
                 [

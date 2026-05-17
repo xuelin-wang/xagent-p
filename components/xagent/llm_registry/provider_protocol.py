@@ -1,5 +1,7 @@
 from typing import Protocol, TypeVar
 
+from pydantic import BaseModel
+
 from xagent.llm_batch.models import (
     BatchCreateRequest,
     BatchJob,
@@ -11,7 +13,7 @@ from xagent.llm_contracts import GenerateRequest, GenerateResponse, ModelCapabil
 from xagent.llm_files import FileDeleteRequest, FileUploadRequest, UploadedFile
 from xagent.llm_structured import StructuredGenerateRequest, StructuredGenerateResponse
 
-T = TypeVar("T")
+T = TypeVar("T", bound=BaseModel)
 
 
 class LLMProvider(Protocol):

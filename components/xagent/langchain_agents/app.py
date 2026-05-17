@@ -3,14 +3,16 @@ import time
 from collections.abc import Mapping
 
 from xagent.agent_app.model import AgentRunResult, PlannerStep, SubagentReply
+from xagent.langchain_agents.merge import LangChainResponseMerger
+from xagent.langchain_agents.planner import LangChainPlanner
 from xagent.langchain_agents.subagents import Subagent
 
 
 class LangChainMultiAgentApp:
     def __init__(
         self,
-        planner,
-        merger,
+        planner: LangChainPlanner,
+        merger: LangChainResponseMerger,
         subagents: Mapping[str, Subagent],
         max_wait_seconds: float = 10.0,
     ):

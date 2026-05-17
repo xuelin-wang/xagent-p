@@ -1,5 +1,7 @@
 from collections.abc import Mapping
+from typing import cast
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
@@ -19,7 +21,7 @@ class PlannerDecision(BaseModel):
 
 
 class LangChainPlanner:
-    def __init__(self, model, subagents: Mapping[str, Subagent]):
+    def __init__(self, model: BaseChatModel, subagents: Mapping[str, Subagent]):
         self._subagents = dict(subagents)
         self._chain = ChatPromptTemplate.from_messages(
             [
@@ -43,8 +45,9 @@ class LangChainPlanner:
             f"- {subagent.name}: {subagent.description}"
             for subagent in self._subagents.values()
         )
-        decision = await self._chain.ainvoke(
-            {"query": query, "subagent_catalog": catalog}
+        decision = cast(
+            PlannerDecision,
+            await self._chain.ainvoke({"query": query, "subagent_catalog": catalog}),
         )
         selections = [
             SubagentSelection(name=name, reason=decision.rationale)

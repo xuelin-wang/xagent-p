@@ -1,12 +1,16 @@
+from collections.abc import Callable
+
 from xagent.llm_config import ProviderConfig
 from xagent.llm_registry.provider_protocol import LLMProvider
 
 
 class ProviderRegistry:
     def __init__(self) -> None:
-        self._providers: dict[str, type[LLMProvider]] = {}
+        self._providers: dict[str, Callable[[ProviderConfig], LLMProvider]] = {}
 
-    def register(self, name: str, provider_cls: type[LLMProvider]) -> None:
+    def register(
+        self, name: str, provider_cls: Callable[[ProviderConfig], LLMProvider]
+    ) -> None:
         self._providers[name] = provider_cls
 
     def create(self, name: str, config: ProviderConfig) -> LLMProvider:

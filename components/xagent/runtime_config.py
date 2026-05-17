@@ -33,8 +33,8 @@ def _validate_env_path(path: str) -> str:
     return path
 
 
-def extract_config_file_args(argv: Sequence[str]) -> tuple[list[str], list[str]]:
-    input_files: list[str] = []
+def extract_config_file_args(argv: Sequence[str]) -> tuple[list[str | Path], list[str]]:
+    input_files: list[str | Path] = []
     remaining_args: list[str] = []
     index = 0
     args = list(argv)
