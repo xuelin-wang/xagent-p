@@ -12,8 +12,7 @@ class Subagent(Protocol):
     name: str
     description: str
 
-    async def ainvoke(self, query: str) -> str:
-        ...
+    async def ainvoke(self, query: str) -> str: ...
 
 
 @dataclass(slots=True)
@@ -37,22 +36,25 @@ class RAGSubagent:
         )
         self._vector_store = InMemoryVectorStore(embeddings)
         self._vector_store.add_documents(self.documents)
-        self._chain = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
+        self._chain = (
+            ChatPromptTemplate.from_messages(
+                [
                     (
-                        "You are a retrieval-augmented specialist. Answer using only the "
-                        "retrieved context. If the context is insufficient, say so clearly. "
-                        "Mention the source titles you used."
+                        "system",
+                        (
+                            "You are a retrieval-augmented specialist. Answer using only the "
+                            "retrieved context. If the context is insufficient, say so clearly. "
+                            "Mention the source titles you used."
+                        ),
                     ),
-                ),
-                (
-                    "human",
-                    "User query:\n{query}\n\nRetrieved context:\n{context}",
-                ),
-            ]
-        ) | self.answer_model
+                    (
+                        "human",
+                        "User query:\n{query}\n\nRetrieved context:\n{context}",
+                    ),
+                ]
+            )
+            | self.answer_model
+        )
 
     async def ainvoke(self, query: str) -> str:
         matches = await self._vector_store.asimilarity_search_with_score(
@@ -67,16 +69,11 @@ class RAGSubagent:
         )
         response = await self._chain.ainvoke({"query": query, "context": context})
         content = response.content if isinstance(response, AIMessage) else str(response)
-        return (
-            f"Retrieved {len(matches)} supporting document(s).\n"
-            f"{content}"
-        )
+        return f"Retrieved {len(matches)} supporting document(s).\n{content}"
 
     @staticmethod
     def _format_match(document: Document, score: float) -> str:
         title = document.metadata.get("title", document.id or "Untitled")
         return (
-            f"Title: {title}\n"
-            f"Similarity: {score:.3f}\n"
-            f"Content: {document.page_content}"
+            f"Title: {title}\nSimilarity: {score:.3f}\nContent: {document.page_content}"
         )

@@ -19,7 +19,9 @@ def is_retryable_status(status_code: int, *, provider_transient: bool = False) -
     return status_code in RETRYABLE_STATUS_CODES
 
 
-def parse_retry_after(value: str | None, *, now: datetime | None = None) -> float | None:
+def parse_retry_after(
+    value: str | None, *, now: datetime | None = None
+) -> float | None:
     if not value:
         return None
     stripped = value.strip()
@@ -82,7 +84,9 @@ async def retry_async(
             and should_retry_result is not None
             and should_retry_result(result)
         ):
-            retry_after = retry_after_from_result(result) if retry_after_from_result else None
+            retry_after = (
+                retry_after_from_result(result) if retry_after_from_result else None
+            )
             await sleep(backoff_delay(attempt, config, retry_after=retry_after))
             continue
         return result

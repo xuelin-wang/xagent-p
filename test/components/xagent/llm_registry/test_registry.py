@@ -15,7 +15,9 @@ def test_registry_create() -> None:
     registry = ProviderRegistry()
     registry.register("openai", DummyProvider)
 
-    provider = registry.create("openai", ProviderConfig(provider="openai", default_model="m"))
+    provider = registry.create(
+        "openai", ProviderConfig(provider="openai", default_model="m")
+    )
 
     assert isinstance(provider, DummyProvider)
     assert registry.list_providers() == ["openai"]

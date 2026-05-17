@@ -143,10 +143,18 @@ async def _test_openai_create_get_cancel_and_results_batch() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen["requests"].append((request.method, str(request.url)))
-        if request.method == "POST" and str(request.url) == "https://openai.test/v1/files":
+        if (
+            request.method == "POST"
+            and str(request.url) == "https://openai.test/v1/files"
+        ):
             seen["upload_body"] = request.content
-            return httpx.Response(200, json={"id": "file-input", "filename": "batch.jsonl"})
-        if request.method == "POST" and str(request.url) == "https://openai.test/v1/batches":
+            return httpx.Response(
+                200, json={"id": "file-input", "filename": "batch.jsonl"}
+            )
+        if (
+            request.method == "POST"
+            and str(request.url) == "https://openai.test/v1/batches"
+        ):
             seen["batch_payload"] = json.loads(request.content)
             return httpx.Response(
                 200,
@@ -158,7 +166,10 @@ async def _test_openai_create_get_cancel_and_results_batch() -> None:
                     "metadata": {"trace": "unit"},
                 },
             )
-        if request.method == "GET" and str(request.url) == "https://openai.test/v1/batches/batch_123":
+        if (
+            request.method == "GET"
+            and str(request.url) == "https://openai.test/v1/batches/batch_123"
+        ):
             return httpx.Response(
                 200,
                 json={
@@ -169,9 +180,15 @@ async def _test_openai_create_get_cancel_and_results_batch() -> None:
                     "request_counts": {"total": 1, "completed": 1, "failed": 0},
                 },
             )
-        if request.method == "POST" and str(request.url) == "https://openai.test/v1/batches/batch_123/cancel":
+        if (
+            request.method == "POST"
+            and str(request.url) == "https://openai.test/v1/batches/batch_123/cancel"
+        ):
             return httpx.Response(200, json={"id": "batch_123", "status": "cancelled"})
-        if request.method == "GET" and str(request.url) == "https://openai.test/v1/files/file-output/content":
+        if (
+            request.method == "GET"
+            and str(request.url) == "https://openai.test/v1/files/file-output/content"
+        ):
             return httpx.Response(
                 200,
                 text=json.dumps(
@@ -189,7 +206,10 @@ async def _test_openai_create_get_cancel_and_results_batch() -> None:
                 )
                 + "\n",
             )
-        if request.method == "GET" and str(request.url) == "https://openai.test/v1/files/file-error/content":
+        if (
+            request.method == "GET"
+            and str(request.url) == "https://openai.test/v1/files/file-error/content"
+        ):
             return httpx.Response(200, text="")
         raise AssertionError(f"unexpected request: {request.method} {request.url}")
 
@@ -209,7 +229,9 @@ async def _test_openai_create_get_cancel_and_results_batch() -> None:
             items=[
                 BatchRequestItem(
                     custom_id="case-1",
-                    request=GenerateRequest(messages=[Message(role=Role.USER, content="hello")]),
+                    request=GenerateRequest(
+                        messages=[Message(role=Role.USER, content="hello")]
+                    ),
                 )
             ],
             metadata={"trace": "unit"},
@@ -241,9 +263,17 @@ async def _test_openai_create_batch_does_not_retry_resource_creation() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal batch_calls
-        if request.method == "POST" and str(request.url) == "https://openai.test/v1/files":
-            return httpx.Response(200, json={"id": "file-input", "filename": "batch.jsonl"})
-        if request.method == "POST" and str(request.url) == "https://openai.test/v1/batches":
+        if (
+            request.method == "POST"
+            and str(request.url) == "https://openai.test/v1/files"
+        ):
+            return httpx.Response(
+                200, json={"id": "file-input", "filename": "batch.jsonl"}
+            )
+        if (
+            request.method == "POST"
+            and str(request.url) == "https://openai.test/v1/batches"
+        ):
             batch_calls += 1
             return httpx.Response(500, json={"error": {"message": "try later"}})
         raise AssertionError(f"unexpected request: {request.method} {request.url}")
@@ -265,7 +295,9 @@ async def _test_openai_create_batch_does_not_retry_resource_creation() -> None:
                 items=[
                     BatchRequestItem(
                         custom_id="case-1",
-                        request=GenerateRequest(messages=[Message(role=Role.USER, content="hello")]),
+                        request=GenerateRequest(
+                            messages=[Message(role=Role.USER, content="hello")]
+                        ),
                     )
                 ]
             )

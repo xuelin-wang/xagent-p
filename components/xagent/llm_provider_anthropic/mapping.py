@@ -34,7 +34,11 @@ def split_system_and_messages(
     mapped: list[dict[str, Any]] = []
     for message in messages:
         content = message.content
-        text = content if isinstance(content, str) else "\n".join(part.text for part in content)
+        text = (
+            content
+            if isinstance(content, str)
+            else "\n".join(part.text for part in content)
+        )
         if message.role == Role.SYSTEM:
             system_parts.append(text)
         elif message.role == Role.TOOL:
@@ -58,8 +62,12 @@ def split_system_and_messages(
     return ("\n\n".join(system_parts) or None), mapped
 
 
-def request_to_anthropic_messages_payload(request: GenerateRequest, model: str) -> dict[str, Any]:
-    system, messages = split_system_and_messages(request.messages, _typed_file_inputs(request.files))
+def request_to_anthropic_messages_payload(
+    request: GenerateRequest, model: str
+) -> dict[str, Any]:
+    system, messages = split_system_and_messages(
+        request.messages, _typed_file_inputs(request.files)
+    )
     payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
@@ -84,7 +92,9 @@ def request_to_anthropic_messages_payload(request: GenerateRequest, model: str) 
             if isinstance(tool, ProviderHostedTool)
         )
     if request.tool_choice is not None:
-        payload["tool_choice"] = tool_choice_to_anthropic_tool_choice(request.tool_choice)
+        payload["tool_choice"] = tool_choice_to_anthropic_tool_choice(
+            request.tool_choice
+        )
     return payload
 
 
@@ -98,7 +108,11 @@ def app_tool_definition_to_anthropic_tool(tool: AppToolDefinition) -> dict[str, 
 
 def provider_hosted_tool_to_anthropic_tool(tool: ProviderHostedTool) -> dict[str, Any]:
     tool_type = "web_search_20250305" if tool.type == "web_search" else tool.type
-    mapped = {"type": tool_type, "name": tool.name or _provider_tool_default_name(tool.type), **tool.config}
+    mapped = {
+        "type": tool_type,
+        "name": tool.name or _provider_tool_default_name(tool.type),
+        **tool.config,
+    }
     return mapped
 
 
@@ -129,8 +143,12 @@ def file_input_to_anthropic_content_block(file_input: FileInput) -> dict[str, An
             },
         }
     if isinstance(source, (UrlFileSource, CloudFileRef)):
-        raise ValueError(f"Anthropic file input does not support {source.type} references.")
-    raise ValueError(f"Unsupported Anthropic file input source: {type(source).__name__}")
+        raise ValueError(
+            f"Anthropic file input does not support {source.type} references."
+        )
+    raise ValueError(
+        f"Unsupported Anthropic file input source: {type(source).__name__}"
+    )
 
 
 def tool_choice_to_anthropic_tool_choice(tool_choice: Any) -> dict[str, Any]:
@@ -149,7 +167,9 @@ def tool_choice_to_anthropic_tool_choice(tool_choice: Any) -> dict[str, Any]:
     return {"type": "auto"}
 
 
-def response_from_anthropic_message(raw: dict[str, Any], model: str) -> GenerateResponse:
+def response_from_anthropic_message(
+    raw: dict[str, Any], model: str
+) -> GenerateResponse:
     usage = raw.get("usage") or {}
     input_tokens = usage.get("input_tokens")
     output_tokens = usage.get("output_tokens")
@@ -269,7 +289,9 @@ def _web_search_citations(block: dict[str, Any]) -> list[Citation]:
             continue
         citations.append(
             Citation(
-                title=result.get("title") if isinstance(result.get("title"), str) else None,
+                title=result.get("title")
+                if isinstance(result.get("title"), str)
+                else None,
                 url=result.get("url") if isinstance(result.get("url"), str) else None,
                 metadata={
                     key: value
@@ -282,7 +304,9 @@ def _web_search_citations(block: dict[str, Any]) -> list[Citation]:
 
 
 def _append_file_inputs(messages: list[dict[str, Any]], files: list[FileInput]) -> None:
-    file_blocks = [file_input_to_anthropic_content_block(file_input) for file_input in files]
+    file_blocks = [
+        file_input_to_anthropic_content_block(file_input) for file_input in files
+    ]
     for message in reversed(messages):
         if message.get("role") != Role.USER.value:
             continue

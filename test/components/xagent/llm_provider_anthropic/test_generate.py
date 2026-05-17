@@ -79,7 +79,9 @@ async def _test_anthropic_generate_requires_api_key() -> None:
     )
 
     with pytest.raises(AuthenticationError):
-        await provider.generate(GenerateRequest(messages=[Message(role=Role.USER, content="Hi")]))
+        await provider.generate(
+            GenerateRequest(messages=[Message(role=Role.USER, content="Hi")])
+        )
 
 
 def test_anthropic_generate_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -105,7 +107,9 @@ async def _test_anthropic_generate_normalizes_rate_limit_error() -> None:
     )
 
     with pytest.raises(RateLimitError) as exc_info:
-        await provider.generate(GenerateRequest(messages=[Message(role=Role.USER, content="Hi")]))
+        await provider.generate(
+            GenerateRequest(messages=[Message(role=Role.USER, content="Hi")])
+        )
 
     assert exc_info.value.payload.request_id == "req-abc"
     assert exc_info.value.payload.retryable is True
@@ -143,7 +147,9 @@ async def _test_anthropic_generate_retries_retryable_response() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    response = await provider.generate(GenerateRequest(messages=[Message(role=Role.USER, content="Hi")]))
+    response = await provider.generate(
+        GenerateRequest(messages=[Message(role=Role.USER, content="Hi")])
+    )
 
     assert calls == 2
     assert response.text == "answer"
@@ -154,10 +160,14 @@ def test_anthropic_generate_retries_retryable_response() -> None:
 
 
 async def _test_anthropic_generate_rejects_unknown_model() -> None:
-    provider = AnthropicProvider(ProviderConfig(provider="anthropic", default_model="not-a-model"))
+    provider = AnthropicProvider(
+        ProviderConfig(provider="anthropic", default_model="not-a-model")
+    )
 
     with pytest.raises(UnsupportedCapabilityError) as exc_info:
-        await provider.generate(GenerateRequest(messages=[Message(role=Role.USER, content="Hi")]))
+        await provider.generate(
+            GenerateRequest(messages=[Message(role=Role.USER, content="Hi")])
+        )
 
     assert exc_info.value.payload.model == "not-a-model"
     assert exc_info.value.payload.operation == "generate"
@@ -247,7 +257,9 @@ async def _test_anthropic_generate_posts_provider_tools_and_parses_traces() -> N
                     {
                         "type": "web_search_tool_result",
                         "tool_use_id": "srvtoolu_1",
-                        "content": [{"title": "Anthropic", "url": "https://www.anthropic.com"}],
+                        "content": [
+                            {"title": "Anthropic", "url": "https://www.anthropic.com"}
+                        ],
                     },
                     {"type": "text", "text": "searched"},
                 ],
@@ -283,7 +295,9 @@ async def _test_anthropic_generate_posts_provider_tools_and_parses_traces() -> N
     ]
     assert response.text == "searched"
     assert response.provider_tool_traces[0].tool_type == "web_search"
-    assert response.provider_tool_traces[0].citations[0].url == "https://www.anthropic.com"
+    assert (
+        response.provider_tool_traces[0].citations[0].url == "https://www.anthropic.com"
+    )
 
 
 def test_anthropic_generate_posts_provider_tools_and_parses_traces() -> None:
@@ -292,7 +306,9 @@ def test_anthropic_generate_posts_provider_tools_and_parses_traces() -> None:
 
 async def _test_anthropic_generate_rejects_unknown_provider_tool() -> None:
     provider = AnthropicProvider(
-        ProviderConfig(provider="anthropic", default_model="claude-sonnet-4-6", api_key="test-key")
+        ProviderConfig(
+            provider="anthropic", default_model="claude-sonnet-4-6", api_key="test-key"
+        )
     )
 
     with pytest.raises(UnsupportedCapabilityError) as exc_info:
@@ -303,12 +319,14 @@ async def _test_anthropic_generate_rejects_unknown_provider_tool() -> None:
             )
         )
 
-    assert exc_info.value.payload.message == "Anthropic provider-hosted tool is not supported: unknown_tool."
+    assert (
+        exc_info.value.payload.message
+        == "Anthropic provider-hosted tool is not supported: unknown_tool."
+    )
 
 
 def test_anthropic_generate_rejects_unknown_provider_tool() -> None:
     asyncio.run(_test_anthropic_generate_rejects_unknown_provider_tool())
-
 
 
 async def _test_anthropic_generate_structured_uses_extraction_tool() -> None:

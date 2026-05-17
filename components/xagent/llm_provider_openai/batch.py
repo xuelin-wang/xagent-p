@@ -26,7 +26,9 @@ from xagent.llm_provider_openai.mapping import (
 OPENAI_BATCH_COMPLETION_WINDOW = "24h"
 
 
-def request_to_openai_batch_jsonl(request: BatchCreateRequest, default_model: str) -> tuple[str, str]:
+def request_to_openai_batch_jsonl(
+    request: BatchCreateRequest, default_model: str
+) -> tuple[str, str]:
     endpoint = _batch_endpoint(request.items)
     lines = [
         json.dumps(
@@ -69,20 +71,28 @@ def batch_results_from_openai_jsonl(
         for line in text.splitlines()
         if line.strip()
     ]
-    return BatchResults(provider="openai", batch_id=batch_id, status=status, items=items)
+    return BatchResults(
+        provider="openai", batch_id=batch_id, status=status, items=items
+    )
 
 
-def _batch_endpoint(items: list[BatchRequestItem]) -> Literal["/v1/responses", "/v1/embeddings"]:
+def _batch_endpoint(
+    items: list[BatchRequestItem],
+) -> Literal["/v1/responses", "/v1/embeddings"]:
     if not items:
         raise ValueError("OpenAI batch requires at least one item.")
     first_is_embedding = isinstance(items[0].request, EmbeddingRequest)
     for item in items:
         if isinstance(item.request, EmbeddingRequest) != first_is_embedding:
-            raise ValueError("OpenAI native batch cannot mix embeddings and responses requests.")
+            raise ValueError(
+                "OpenAI native batch cannot mix embeddings and responses requests."
+            )
     return "/v1/embeddings" if first_is_embedding else "/v1/responses"
 
 
-def _batch_item_body(item: BatchRequestItem, batch_model: str | None, default_model: str) -> dict[str, Any]:
+def _batch_item_body(
+    item: BatchRequestItem, batch_model: str | None, default_model: str
+) -> dict[str, Any]:
     request = item.request
     if isinstance(request, EmbeddingRequest):
         model = request.model or batch_model or DEFAULT_OPENAI_EMBEDDING_MODEL
@@ -141,7 +151,12 @@ def _batch_result_item_from_line(line: str) -> BatchResultItem:
 
 def _is_embedding_body(body: dict[str, Any]) -> bool:
     data = body.get("data")
-    return isinstance(data, list) and bool(data) and isinstance(data[0], dict) and "embedding" in data[0]
+    return (
+        isinstance(data, list)
+        and bool(data)
+        and isinstance(data[0], dict)
+        and "embedding" in data[0]
+    )
 
 
 def _error_message(error: Any) -> str | None:

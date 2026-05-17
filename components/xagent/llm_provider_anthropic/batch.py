@@ -16,14 +16,18 @@ from xagent.llm_provider_anthropic.mapping import (
 )
 
 
-def request_to_anthropic_batch_payload(request: BatchCreateRequest, default_model: str) -> dict[str, Any]:
+def request_to_anthropic_batch_payload(
+    request: BatchCreateRequest, default_model: str
+) -> dict[str, Any]:
     if not request.items:
         raise ValueError("Anthropic batch requires at least one item.")
     return {
         "requests": [
             {
                 "custom_id": item.custom_id,
-                "params": _batch_item_params(item.request, request.model, default_model),
+                "params": _batch_item_params(
+                    item.request, request.model, default_model
+                ),
             }
             for item in request.items
         ]
@@ -49,18 +53,24 @@ def batch_results_from_anthropic_jsonl(
     text: str,
 ) -> BatchResults:
     items = [
-        _batch_result_item_from_line(line)
-        for line in text.splitlines()
-        if line.strip()
+        _batch_result_item_from_line(line) for line in text.splitlines() if line.strip()
     ]
-    return BatchResults(provider="anthropic", batch_id=batch_id, status=status, items=items)
+    return BatchResults(
+        provider="anthropic", batch_id=batch_id, status=status, items=items
+    )
 
 
-def _batch_item_params(request: Any, batch_model: str | None, default_model: str) -> dict[str, Any]:
+def _batch_item_params(
+    request: Any, batch_model: str | None, default_model: str
+) -> dict[str, Any]:
     if not isinstance(request, GenerateRequest):
-        raise TypeError(f"Unsupported Anthropic batch request type: {type(request).__name__}")
+        raise TypeError(
+            f"Unsupported Anthropic batch request type: {type(request).__name__}"
+        )
     if request.response_format is not None:
-        raise ValueError("Anthropic native batch does not support wrapper-managed structured output.")
+        raise ValueError(
+            "Anthropic native batch does not support wrapper-managed structured output."
+        )
     model = request.model or batch_model or default_model
     return request_to_anthropic_messages_payload(request, model)
 
@@ -74,7 +84,9 @@ def _batch_result_item_from_line(line: str) -> BatchResultItem:
         message = result.get("message") or {}
         return BatchResultItem(
             custom_id=custom_id,
-            response=response_from_anthropic_message(message, message.get("model") or "unknown"),
+            response=response_from_anthropic_message(
+                message, message.get("model") or "unknown"
+            ),
             raw=raw,
         )
 

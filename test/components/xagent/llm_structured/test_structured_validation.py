@@ -14,7 +14,12 @@ def test_parse_json_object() -> None:
 
 
 def test_validate_structured_output() -> None:
-    assert validate_structured_output({"value": "ok"}, SampleOutput, provider="test", model="m").value == "ok"
+    assert (
+        validate_structured_output(
+            {"value": "ok"}, SampleOutput, provider="test", model="m"
+        ).value
+        == "ok"
+    )
 
 
 def test_validate_structured_output_raises() -> None:

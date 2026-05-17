@@ -108,7 +108,9 @@ async def _test_anthropic_upload_file_posts_multipart_and_normalizes_response() 
 
     uploaded = await provider.upload_file(
         FileUploadRequest(
-            source=BytesFileSource(filename="note.txt", data=b"hello", media_type="text/plain"),
+            source=BytesFileSource(
+                filename="note.txt", data=b"hello", media_type="text/plain"
+            ),
             purpose=FilePurpose.PROMPT_INPUT,
         )
     )
@@ -152,7 +154,9 @@ async def _test_anthropic_upload_file_does_not_retry_resource_creation() -> None
     with pytest.raises(ProviderServerError):
         await provider.upload_file(
             FileUploadRequest(
-                source=BytesFileSource(filename="note.txt", data=b"hello", media_type="text/plain"),
+                source=BytesFileSource(
+                    filename="note.txt", data=b"hello", media_type="text/plain"
+                ),
                 purpose=FilePurpose.PROMPT_INPUT,
             )
         )
@@ -183,7 +187,9 @@ async def _test_anthropic_delete_file_deletes_provider_file() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    await provider.delete_file(FileDeleteRequest(provider="anthropic", file_id="file_123"))
+    await provider.delete_file(
+        FileDeleteRequest(provider="anthropic", file_id="file_123")
+    )
 
     assert seen == {
         "url": "https://anthropic.test/v1/files/file_123",
@@ -216,7 +222,9 @@ async def _test_anthropic_delete_file_does_not_retry_ambiguous_delete() -> None:
     )
 
     with pytest.raises(ProviderServerError):
-        await provider.delete_file(FileDeleteRequest(provider="anthropic", file_id="file_123"))
+        await provider.delete_file(
+            FileDeleteRequest(provider="anthropic", file_id="file_123")
+        )
 
     assert calls == 1
 

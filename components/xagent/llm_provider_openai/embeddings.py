@@ -11,7 +11,9 @@ OPENAI_EMBEDDING_MODELS = {
 DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 
 
-def request_to_openai_embeddings_payload(request: EmbeddingRequest, model: str) -> dict[str, Any]:
+def request_to_openai_embeddings_payload(
+    request: EmbeddingRequest, model: str
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": model,
         "input": request.inputs,
@@ -24,7 +26,9 @@ def request_to_openai_embeddings_payload(request: EmbeddingRequest, model: str) 
     return payload
 
 
-def response_from_openai_embeddings(raw: dict[str, Any], model: str) -> EmbeddingResponse:
+def response_from_openai_embeddings(
+    raw: dict[str, Any], model: str
+) -> EmbeddingResponse:
     vectors = [
         EmbeddingVector(index=item["index"], embedding=item["embedding"])
         for item in sorted(raw.get("data", []), key=lambda item: item.get("index", 0))

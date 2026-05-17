@@ -4,7 +4,9 @@ from pydantic import SecretStr
 from xagent.llm_config import ProviderConfig, require_api_key, resolve_api_key
 
 
-def test_resolve_api_key_prefers_explicit_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_api_key_prefers_explicit_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "env-key")
     config = ProviderConfig(
         provider="openai",

@@ -9,7 +9,9 @@ from xagent.llm_structured.response_format import ResponseFormat, ResponseFormat
 T = TypeVar("T", bound=BaseModel)
 
 
-def response_format_for_model(model_type: type[BaseModel], *, strict: bool = True) -> ResponseFormat:
+def response_format_for_model(
+    model_type: type[BaseModel], *, strict: bool = True
+) -> ResponseFormat:
     return ResponseFormat(
         type=ResponseFormatType.JSON_SCHEMA,
         schema_name=model_type.__name__,

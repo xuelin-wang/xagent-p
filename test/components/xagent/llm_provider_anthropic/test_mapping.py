@@ -185,7 +185,9 @@ def test_file_input_to_anthropic_content_block_maps_image_bytes() -> None:
 def test_file_input_to_anthropic_content_block_rejects_cloud_file() -> None:
     with pytest.raises(ValueError, match="does not support cloud_file references"):
         file_input_to_anthropic_content_block(
-            FileInput(source=CloudFileRef(uri="gdrive://doc", media_type="application/pdf"))
+            FileInput(
+                source=CloudFileRef(uri="gdrive://doc", media_type="application/pdf")
+            )
         )
 
 

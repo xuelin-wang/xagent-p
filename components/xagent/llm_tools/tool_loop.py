@@ -14,15 +14,13 @@ from xagent.llm_tools.validation import validate_app_tool_call
 
 
 class AppToolExecutor(Protocol):
-    def __call__(self, arguments: dict[str, Any]) -> Awaitable[Any]:
-        ...
+    def __call__(self, arguments: dict[str, Any]) -> Awaitable[Any]: ...
 
 
 class ToolLoopProvider(Protocol):
     provider_name: str
 
-    async def generate(self, request: GenerateRequest) -> GenerateResponse:
-        ...
+    async def generate(self, request: GenerateRequest) -> GenerateResponse: ...
 
 
 async def run_app_tool_loop(

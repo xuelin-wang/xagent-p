@@ -8,8 +8,7 @@ from xagent.llm_contracts import GenerateRequest, GenerateResponse, LLMError
 class BatchGenerateProvider(Protocol):
     provider_name: str
 
-    async def generate(self, request: GenerateRequest) -> GenerateResponse:
-        ...
+    async def generate(self, request: GenerateRequest) -> GenerateResponse: ...
 
 
 async def generate_many(

@@ -75,7 +75,9 @@ ANTHROPIC_TEXT_MODELS = {
 class AnthropicProvider:
     provider_name = "anthropic"
 
-    def __init__(self, config: ProviderConfig, transport: httpx.AsyncBaseTransport | None = None):
+    def __init__(
+        self, config: ProviderConfig, transport: httpx.AsyncBaseTransport | None = None
+    ):
         self.config = config
         self._transport = transport
 
@@ -118,10 +120,14 @@ class AnthropicProvider:
         if request.app_tools:
             assert_capability(caps, Capability.APP_TOOL_CALLS, operation="generate")
         if request.provider_tools:
-            assert_capability(caps, Capability.PROVIDER_HOSTED_TOOLS, operation="generate")
+            assert_capability(
+                caps, Capability.PROVIDER_HOSTED_TOOLS, operation="generate"
+            )
             self._check_provider_tools(request.provider_tools, model)
         if request.app_tools and request.provider_tools:
-            assert_capability(caps, Capability.MIXED_APP_AND_PROVIDER_TOOLS, operation="generate")
+            assert_capability(
+                caps, Capability.MIXED_APP_AND_PROVIDER_TOOLS, operation="generate"
+            )
         if request.files:
             assert_capability(caps, Capability.FILE_INPUT, operation="generate")
         if request.response_format is not None:
@@ -218,7 +224,9 @@ class AnthropicProvider:
             update={
                 "response_format": None,
                 "app_tools": [*request.app_tools, extraction_tool],
-                "tool_choice": ToolChoice(mode="required", tool_name=extraction_tool.name),
+                "tool_choice": ToolChoice(
+                    mode="required", tool_name=extraction_tool.name
+                ),
             }
         )
         attempts = request.validation_retries + 1
@@ -264,7 +272,9 @@ class AnthropicProvider:
                 raw_response=response.raw_response,
             )
 
-        raise RuntimeError("Anthropic structured generation failed unexpectedly.") from last_error
+        raise RuntimeError(
+            "Anthropic structured generation failed unexpectedly."
+        ) from last_error
 
     async def embed(self, request: EmbeddingRequest) -> EmbeddingResponse:
         raise UnsupportedCapabilityError(
@@ -306,7 +316,13 @@ class AnthropicProvider:
                         "anthropic-version": "2023-06-01",
                         "anthropic-beta": ANTHROPIC_FILES_BETA,
                     },
-                    files={"file": (filename, data, media_type or "application/octet-stream")},
+                    files={
+                        "file": (
+                            filename,
+                            data,
+                            media_type or "application/octet-stream",
+                        )
+                    },
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -410,7 +426,9 @@ class AnthropicProvider:
         return batch_job_from_anthropic(response.json())
 
     async def get_batch(self, batch_id: str) -> BatchJob:
-        response = await self._get_batch_response(f"/messages/batches/{batch_id}", operation="get_batch")
+        response = await self._get_batch_response(
+            f"/messages/batches/{batch_id}", operation="get_batch"
+        )
         return batch_job_from_anthropic(response.json())
 
     async def cancel_batch(self, batch_id: str) -> BatchJob:
@@ -567,9 +585,15 @@ class AnthropicProvider:
         return await retry_async(
             request,
             self.config.retry,
-            should_retry_result=lambda response: is_retryable_status(response.status_code),
-            retry_after_from_result=lambda response: parse_retry_after(response.headers.get("retry-after")),
-            should_retry_exception=lambda exc: isinstance(exc, (httpx.TimeoutException, httpx.TransportError)),
+            should_retry_result=lambda response: is_retryable_status(
+                response.status_code
+            ),
+            retry_after_from_result=lambda response: parse_retry_after(
+                response.headers.get("retry-after")
+            ),
+            should_retry_exception=lambda exc: isinstance(
+                exc, (httpx.TimeoutException, httpx.TransportError)
+            ),
         )
 
     def _raise_response_error(
@@ -634,7 +658,8 @@ def _uses_anthropic_uploaded_file(request: GenerateRequest) -> bool:
 
 def _batch_uses_anthropic_uploaded_file(request: BatchCreateRequest) -> bool:
     return any(
-        isinstance(item.request, GenerateRequest) and _uses_anthropic_uploaded_file(item.request)
+        isinstance(item.request, GenerateRequest)
+        and _uses_anthropic_uploaded_file(item.request)
         for item in request.items
     )
 
@@ -646,7 +671,8 @@ def _structured_output_tool(
     return AppToolDefinition(
         name=request.response_format.schema_name or output_type.__name__,
         description="Extract the requested structured output. Return only fields described by the schema.",
-        input_schema=request.response_format.json_schema or output_type.model_json_schema(),
+        input_schema=request.response_format.json_schema
+        or output_type.model_json_schema(),
     )
 
 

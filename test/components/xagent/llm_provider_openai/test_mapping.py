@@ -142,7 +142,9 @@ def test_request_to_openai_responses_payload_with_file_inputs() -> None:
         GenerateRequest(
             messages=[Message(role=Role.USER, content="summarize")],
             files=[
-                FileInput(source=ProviderFileRef(provider="openai", file_id="file-123")),
+                FileInput(
+                    source=ProviderFileRef(provider="openai", file_id="file-123")
+                ),
                 FileInput(source=UrlFileSource(url="https://example.com/doc.pdf")),
                 FileInput(
                     source=BytesFileSource(

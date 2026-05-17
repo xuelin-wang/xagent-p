@@ -21,25 +21,22 @@ class PlannerDecision(BaseModel):
 class LangChainPlanner:
     def __init__(self, model, subagents: Mapping[str, Subagent]):
         self._subagents = dict(subagents)
-        self._chain = (
-            ChatPromptTemplate.from_messages(
-                [
+        self._chain = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
                     (
-                        "system",
-                        (
-                            "You are a planner for a supervisor agent. "
-                            "Select the subagents that should help answer the user query. "
-                            "Only return subagent names from the provided catalog."
-                        ),
+                        "You are a planner for a supervisor agent. "
+                        "Select the subagents that should help answer the user query. "
+                        "Only return subagent names from the provided catalog."
                     ),
-                    (
-                        "human",
-                        "User query:\n{query}\n\nAvailable subagents:\n{subagent_catalog}",
-                    ),
-                ]
-            )
-            | model.with_structured_output(PlannerDecision)
-        )
+                ),
+                (
+                    "human",
+                    "User query:\n{query}\n\nAvailable subagents:\n{subagent_catalog}",
+                ),
+            ]
+        ) | model.with_structured_output(PlannerDecision)
 
     async def aplan(self, query: str) -> PlannerStep:
         catalog = "\n".join(

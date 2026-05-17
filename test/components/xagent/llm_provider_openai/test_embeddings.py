@@ -15,7 +15,9 @@ from xagent.llm_provider_openai.embeddings import (
 
 
 async def _test_openai_embed_rejects_unknown_model() -> None:
-    provider = OpenAIProvider(ProviderConfig(provider="openai", default_model="gpt-5.5"))
+    provider = OpenAIProvider(
+        ProviderConfig(provider="openai", default_model="gpt-5.5")
+    )
 
     with pytest.raises(UnsupportedCapabilityError):
         await provider.embed(EmbeddingRequest(model="other", inputs=["hello"]))

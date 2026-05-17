@@ -49,7 +49,9 @@ def test_extract_config_file_args_rejects_yaml_env_paths():
         extract_config_file_args(["--env", "config.yaml"])
 
 
-def test_load_runtime_config_uses_os_environ_with_highest_precedence(monkeypatch, tmp_path: Path):
+def test_load_runtime_config_uses_os_environ_with_highest_precedence(
+    monkeypatch, tmp_path: Path
+):
     yaml_file = tmp_path / "config.yaml"
     yaml_file.write_text(
         "\n".join(
@@ -80,7 +82,7 @@ def test_load_runtime_config_uses_os_environ_with_highest_precedence(monkeypatch
 
     config, remaining_args = load_runtime_config(
         SampleRuntimeConfig,
-        ["--config", str(yaml_file), "--env", str(env_file), "leftover"]
+        ["--config", str(yaml_file), "--env", str(env_file), "leftover"],
     )
 
     assert isinstance(config, SampleRuntimeConfig)

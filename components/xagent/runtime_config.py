@@ -44,14 +44,32 @@ def extract_config_file_args(argv: Sequence[str]) -> tuple[list[str], list[str]]
 
         if arg == "--config":
             index += 1
-            input_files.append(_validate_config_path(_require_arg_value("--config", args[index] if index < len(args) else None)))
+            input_files.append(
+                _validate_config_path(
+                    _require_arg_value(
+                        "--config", args[index] if index < len(args) else None
+                    )
+                )
+            )
         elif arg.startswith("--config="):
-            input_files.append(_validate_config_path(_require_arg_value("--config", arg.split("=", 1)[1])))
+            input_files.append(
+                _validate_config_path(
+                    _require_arg_value("--config", arg.split("=", 1)[1])
+                )
+            )
         elif arg == "--env":
             index += 1
-            input_files.append(_validate_env_path(_require_arg_value("--env", args[index] if index < len(args) else None)))
+            input_files.append(
+                _validate_env_path(
+                    _require_arg_value(
+                        "--env", args[index] if index < len(args) else None
+                    )
+                )
+            )
         elif arg.startswith("--env="):
-            input_files.append(_validate_env_path(_require_arg_value("--env", arg.split("=", 1)[1])))
+            input_files.append(
+                _validate_env_path(_require_arg_value("--env", arg.split("=", 1)[1]))
+            )
         else:
             remaining_args.append(arg)
 
@@ -60,8 +78,12 @@ def extract_config_file_args(argv: Sequence[str]) -> tuple[list[str], list[str]]
     return input_files, remaining_args
 
 
-def _filter_env_map(env_map: dict[str, str], config_type: type[ConfigType]) -> dict[str, str]:
-    top_level_fields = {field_name.casefold() for field_name in config_type.model_fields}
+def _filter_env_map(
+    env_map: dict[str, str], config_type: type[ConfigType]
+) -> dict[str, str]:
+    top_level_fields = {
+        field_name.casefold() for field_name in config_type.model_fields
+    }
     filtered: dict[str, str] = {}
 
     for key, value in env_map.items():

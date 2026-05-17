@@ -16,7 +16,9 @@ class ToolThenDoneProvider:
             return GenerateResponse(
                 provider="fake",
                 model="fake-model",
-                app_tool_calls=[AppToolCall(id="call-1", name="lookup", arguments={"id": "abc"})],
+                app_tool_calls=[
+                    AppToolCall(id="call-1", name="lookup", arguments={"id": "abc"})
+                ],
             )
         return GenerateResponse(provider="fake", model="fake-model", text="done")
 
@@ -33,7 +35,11 @@ async def _test_run_app_tool_loop_executes_until_final_response() -> None:
                 AppToolDefinition(
                     name="lookup",
                     description="Lookup.",
-                    input_schema={"type": "object", "required": ["id"], "properties": {"id": {"type": "string"}}},
+                    input_schema={
+                        "type": "object",
+                        "required": ["id"],
+                        "properties": {"id": {"type": "string"}},
+                    },
                 )
             ],
         ),

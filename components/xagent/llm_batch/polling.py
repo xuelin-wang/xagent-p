@@ -19,7 +19,10 @@ async def poll_until(
         value = await fetch()
         if is_done(value):
             return value
-        if config.timeout_seconds is not None and time.monotonic() - started >= config.timeout_seconds:
+        if (
+            config.timeout_seconds is not None
+            and time.monotonic() - started >= config.timeout_seconds
+        ):
             return value
         await asyncio.sleep(interval)
         interval = min(interval * 2, config.max_interval_seconds)

@@ -4,7 +4,9 @@ from xagent.llm_provider_openai import OpenAIProvider
 
 
 def test_openai_capabilities() -> None:
-    provider = OpenAIProvider(ProviderConfig(provider="openai", default_model="gpt-5.5"))
+    provider = OpenAIProvider(
+        ProviderConfig(provider="openai", default_model="gpt-5.5")
+    )
 
     capabilities = provider.capabilities()
 

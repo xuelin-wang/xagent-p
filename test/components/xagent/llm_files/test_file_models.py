@@ -23,7 +23,9 @@ def test_file_input_discriminates_provider_file_ref() -> None:
 
 def test_read_upload_bytes_from_bytes_source() -> None:
     request = FileUploadRequest(
-        source=BytesFileSource(filename="note.txt", data=b"hello", media_type="text/plain"),
+        source=BytesFileSource(
+            filename="note.txt", data=b"hello", media_type="text/plain"
+        ),
         purpose=FilePurpose.PROMPT_INPUT,
     )
 

@@ -59,8 +59,12 @@ def test_live_anthropic_generates_structured_output() -> None:
         )
         response = await provider.generate_structured(
             StructuredGenerateRequest(
-                messages=[Message(role=Role.USER, content="Return ok in the value field.")],
-                response_format=response_format_for_model(LiveAnthropicStructuredOutput),
+                messages=[
+                    Message(role=Role.USER, content="Return ok in the value field.")
+                ],
+                response_format=response_format_for_model(
+                    LiveAnthropicStructuredOutput
+                ),
                 max_output_tokens=128,
             ),
             LiveAnthropicStructuredOutput,
@@ -81,7 +85,9 @@ def test_live_anthropic_returns_app_tool_call() -> None:
         )
         response = await provider.generate(
             GenerateRequest(
-                messages=[Message(role=Role.USER, content="Look up id abc using the tool.")],
+                messages=[
+                    Message(role=Role.USER, content="Look up id abc using the tool.")
+                ],
                 app_tools=[
                     AppToolDefinition(
                         name="lookup",
@@ -126,7 +132,9 @@ def test_live_anthropic_uploads_and_deletes_file() -> None:
             assert uploaded.file_id.startswith("file_")
             assert uploaded.filename == "xagent-integration-anthropic.txt"
         finally:
-            await provider.delete_file(FileDeleteRequest(provider=uploaded.provider, file_id=uploaded.file_id))
+            await provider.delete_file(
+                FileDeleteRequest(provider=uploaded.provider, file_id=uploaded.file_id)
+            )
 
     asyncio.run(run())
 
@@ -143,7 +151,9 @@ def test_live_anthropic_creates_gets_and_cancels_batch() -> None:
                     BatchRequestItem(
                         custom_id="integration-1",
                         request=GenerateRequest(
-                            messages=[Message(role=Role.USER, content="Reply with ok.")],
+                            messages=[
+                                Message(role=Role.USER, content="Reply with ok.")
+                            ],
                             max_output_tokens=16,
                         ),
                     )
@@ -157,7 +167,11 @@ def test_live_anthropic_creates_gets_and_cancels_batch() -> None:
         assert created.batch_id.startswith("msgbatch_")
         assert got.batch_id == created.batch_id
         assert cancelled.batch_id == created.batch_id
-        assert created.status in {BatchStatus.VALIDATING, BatchStatus.QUEUED, BatchStatus.RUNNING}
+        assert created.status in {
+            BatchStatus.VALIDATING,
+            BatchStatus.QUEUED,
+            BatchStatus.RUNNING,
+        }
         assert cancelled.status in {BatchStatus.RUNNING, BatchStatus.CANCELLED}
 
     asyncio.run(run())

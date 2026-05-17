@@ -34,7 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
     text.add_argument("--max-output-tokens", type=int)
     text.add_argument("--temperature", type=float)
 
-    structured = subparsers.add_parser("structured", help="Generate JSON or schema-shaped output.")
+    structured = subparsers.add_parser(
+        "structured", help="Generate JSON or schema-shaped output."
+    )
     structured.add_argument("prompt")
     structured.add_argument("--schema-name", default="Output")
     structured.add_argument("--schema-json")
@@ -47,16 +49,24 @@ def build_parser() -> argparse.ArgumentParser:
     upload = subparsers.add_parser("upload-file", help="Upload a provider file.")
     upload.add_argument("path")
     upload.add_argument("--media-type")
-    upload.add_argument("--purpose", choices=[purpose.value for purpose in FilePurpose], default=FilePurpose.PROMPT_INPUT.value)
+    upload.add_argument(
+        "--purpose",
+        choices=[purpose.value for purpose in FilePurpose],
+        default=FilePurpose.PROMPT_INPUT.value,
+    )
 
-    create_batch = subparsers.add_parser("create-batch", help="Create a native text batch from prompts.")
+    create_batch = subparsers.add_parser(
+        "create-batch", help="Create a native text batch from prompts."
+    )
     create_batch.add_argument("prompts", nargs="+")
     create_batch.add_argument("--custom-id-prefix", default="item")
 
     get_batch = subparsers.add_parser("get-batch", help="Get a native batch job.")
     get_batch.add_argument("batch_id")
 
-    batch_results = subparsers.add_parser("batch-results", help="Get native batch results.")
+    batch_results = subparsers.add_parser(
+        "batch-results", help="Get native batch results."
+    )
     batch_results.add_argument("batch_id")
     return parser
 
@@ -94,7 +104,9 @@ async def _dispatch(provider: Any, args: argparse.Namespace) -> Any:
                 messages=[Message(role=Role.USER, content=args.prompt)],
                 max_output_tokens=args.max_output_tokens,
                 response_format=ResponseFormat(
-                    type=ResponseFormatType.JSON_SCHEMA if schema else ResponseFormatType.JSON_OBJECT,
+                    type=ResponseFormatType.JSON_SCHEMA
+                    if schema
+                    else ResponseFormatType.JSON_OBJECT,
                     schema_name=args.schema_name if schema else None,
                     json_schema=schema,
                 ),
@@ -102,7 +114,9 @@ async def _dispatch(provider: Any, args: argparse.Namespace) -> Any:
             _structured_output_type(schema, args.schema_name),
         )
     if args.command == "embed":
-        return await provider.embed(EmbeddingRequest(inputs=args.inputs, dimensions=args.dimensions))
+        return await provider.embed(
+            EmbeddingRequest(inputs=args.inputs, dimensions=args.dimensions)
+        )
     if args.command == "upload-file":
         path = Path(args.path)
         return await provider.upload_file(
@@ -117,7 +131,9 @@ async def _dispatch(provider: Any, args: argparse.Namespace) -> Any:
                 items=[
                     BatchRequestItem(
                         custom_id=f"{args.custom_id_prefix}-{index}",
-                        request=GenerateRequest(messages=[Message(role=Role.USER, content=prompt)]),
+                        request=GenerateRequest(
+                            messages=[Message(role=Role.USER, content=prompt)]
+                        ),
                     )
                     for index, prompt in enumerate(args.prompts, start=1)
                 ]

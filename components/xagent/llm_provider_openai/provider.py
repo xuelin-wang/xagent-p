@@ -85,7 +85,9 @@ OPENAI_PROVIDER_TOOL_TYPES = {
 class OpenAIProvider:
     provider_name = "openai"
 
-    def __init__(self, config: ProviderConfig, transport: httpx.AsyncBaseTransport | None = None):
+    def __init__(
+        self, config: ProviderConfig, transport: httpx.AsyncBaseTransport | None = None
+    ):
         self.config = config
         self._transport = transport
 
@@ -130,10 +132,14 @@ class OpenAIProvider:
         if request.app_tools:
             assert_capability(caps, Capability.APP_TOOL_CALLS, operation="generate")
         if request.provider_tools:
-            assert_capability(caps, Capability.PROVIDER_HOSTED_TOOLS, operation="generate")
+            assert_capability(
+                caps, Capability.PROVIDER_HOSTED_TOOLS, operation="generate"
+            )
             self._check_provider_tools(request.provider_tools, model)
         if request.app_tools and request.provider_tools:
-            assert_capability(caps, Capability.MIXED_APP_AND_PROVIDER_TOOLS, operation="generate")
+            assert_capability(
+                caps, Capability.MIXED_APP_AND_PROVIDER_TOOLS, operation="generate"
+            )
         if request.files:
             assert_capability(caps, Capability.FILE_INPUT, operation="generate")
         if request.response_format is not None:
@@ -175,7 +181,9 @@ class OpenAIProvider:
 
         for attempt in range(attempts):
             payload = request_to_openai_responses_payload(current, model)
-            response = await self._post_responses(payload, model, operation="generate_structured")
+            response = await self._post_responses(
+                payload, model, operation="generate_structured"
+            )
             generated = response_from_openai_responses(response.json(), model)
             try:
                 raw_json = parse_json_object(generated.text or "")
@@ -214,7 +222,9 @@ class OpenAIProvider:
                 raw_response=generated.raw_response,
             )
 
-        raise RuntimeError("OpenAI structured generation failed unexpectedly.") from last_error
+        raise RuntimeError(
+            "OpenAI structured generation failed unexpectedly."
+        ) from last_error
 
     async def embed(self, request: EmbeddingRequest) -> EmbeddingResponse:
         model = request.model or DEFAULT_OPENAI_EMBEDDING_MODEL
@@ -315,7 +325,13 @@ class OpenAIProvider:
                     "/files",
                     headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
                     data={"purpose": purpose},
-                    files={"file": (filename, data, media_type or "application/octet-stream")},
+                    files={
+                        "file": (
+                            filename,
+                            data,
+                            media_type or "application/octet-stream",
+                        )
+                    },
                 )
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -406,7 +422,9 @@ class OpenAIProvider:
             self._raise_response_error(response, None, operation="delete_file")
 
     async def create_batch(self, request: BatchCreateRequest) -> BatchJob:
-        endpoint, jsonl = request_to_openai_batch_jsonl(request, self.config.default_model)
+        endpoint, jsonl = request_to_openai_batch_jsonl(
+            request, self.config.default_model
+        )
         uploaded = await self.upload_file(
             FileUploadRequest(
                 source=BytesFileSource(
@@ -432,7 +450,9 @@ class OpenAIProvider:
         return batch_job_from_openai(response.json())
 
     async def cancel_batch(self, batch_id: str) -> BatchJob:
-        response = await self._post_batch({}, operation="cancel_batch", path=f"/batches/{batch_id}/cancel")
+        response = await self._post_batch(
+            {}, operation="cancel_batch", path=f"/batches/{batch_id}/cancel"
+        )
         return batch_job_from_openai(response.json())
 
     async def get_batch_results(self, batch_id: str) -> BatchResults:
@@ -525,7 +545,9 @@ class OpenAIProvider:
                     operation="get_batch",
                     request=lambda: client.get(
                         f"/batches/{batch_id}",
-                        headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
+                        headers={
+                            "Authorization": f"Bearer {api_key.get_secret_value()}"
+                        },
                     ),
                 )
         except httpx.TimeoutException as exc:
@@ -574,7 +596,9 @@ class OpenAIProvider:
                     operation="download_file",
                     request=lambda: client.get(
                         f"/files/{file_id}/content",
-                        headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
+                        headers={
+                            "Authorization": f"Bearer {api_key.get_secret_value()}"
+                        },
                     ),
                 )
         except httpx.TimeoutException as exc:
@@ -685,12 +709,20 @@ class OpenAIProvider:
         return await retry_async(
             request,
             self.config.retry,
-            should_retry_result=lambda response: is_retryable_status(response.status_code),
-            retry_after_from_result=lambda response: parse_retry_after(response.headers.get("retry-after")),
-            should_retry_exception=lambda exc: isinstance(exc, (httpx.TimeoutException, httpx.TransportError)),
+            should_retry_result=lambda response: is_retryable_status(
+                response.status_code
+            ),
+            retry_after_from_result=lambda response: parse_retry_after(
+                response.headers.get("retry-after")
+            ),
+            should_retry_exception=lambda exc: isinstance(
+                exc, (httpx.TimeoutException, httpx.TransportError)
+            ),
         )
 
-    def _raise_response_error(self, response: httpx.Response, model: str | None, *, operation: str) -> None:
+    def _raise_response_error(
+        self, response: httpx.Response, model: str | None, *, operation: str
+    ) -> None:
         raw_error = _safe_json(response)
         message = _error_message(raw_error) or response.text
         request_id = response.headers.get("x-request-id")

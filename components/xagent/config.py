@@ -69,7 +69,9 @@ def validate_mapping_key_names(data: Any) -> None:
     seen_casefolded: dict[str, str] = {}
     for key, value in data.items():
         if not isinstance(key, str):
-            raise ValueError(f"Configuration keys must be strings, got: {type(key).__name__}")
+            raise ValueError(
+                f"Configuration keys must be strings, got: {type(key).__name__}"
+            )
         _validate_config_key_name(key)
         normalized = key.casefold()
         existing = seen_casefolded.get(normalized)
@@ -82,7 +84,9 @@ def validate_mapping_key_names(data: Any) -> None:
         validate_mapping_key_names(value)
 
 
-def merge_dicts_recursive(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+def merge_dicts_recursive(
+    base: dict[str, Any], override: dict[str, Any]
+) -> dict[str, Any]:
     result = base.copy()
     for key, value in override.items():
         if isinstance(result.get(key), dict) and isinstance(value, dict):
@@ -163,7 +167,11 @@ def load_typed_config(
     for input_file in input_files:
         path = Path(input_file)
         suffix = path.suffix.lower()
-        parsed = parse_yaml_file(path) if suffix in {".yaml", ".yml"} else parse_env_file(path)
+        parsed = (
+            parse_yaml_file(path)
+            if suffix in {".yaml", ".yml"}
+            else parse_env_file(path)
+        )
         merged = merge_dicts_recursive(merged, parsed)
 
     if env_map:

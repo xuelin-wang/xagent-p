@@ -9,7 +9,9 @@ from xagent.llm_provider_anthropic import AnthropicProvider
 
 
 def test_anthropic_capabilities() -> None:
-    provider = AnthropicProvider(ProviderConfig(provider="anthropic", default_model="claude-sonnet-4-6"))
+    provider = AnthropicProvider(
+        ProviderConfig(provider="anthropic", default_model="claude-sonnet-4-6")
+    )
 
     capabilities = provider.capabilities()
 
@@ -26,7 +28,9 @@ def test_anthropic_capabilities() -> None:
 
 
 async def _test_anthropic_embed_raises_unsupported() -> None:
-    provider = AnthropicProvider(ProviderConfig(provider="anthropic", default_model="claude-sonnet-4-6"))
+    provider = AnthropicProvider(
+        ProviderConfig(provider="anthropic", default_model="claude-sonnet-4-6")
+    )
 
     with pytest.raises(UnsupportedCapabilityError):
         await provider.embed(EmbeddingRequest(inputs=["hello"]))

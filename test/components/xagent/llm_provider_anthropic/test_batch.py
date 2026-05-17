@@ -95,7 +95,10 @@ def test_batch_results_from_anthropic_jsonl() -> None:
                     "custom_id": "case-2",
                     "result": {
                         "type": "errored",
-                        "error": {"type": "invalid_request_error", "message": "bad request"},
+                        "error": {
+                            "type": "invalid_request_error",
+                            "message": "bad request",
+                        },
                     },
                 }
             )
@@ -114,7 +117,10 @@ async def _test_anthropic_create_get_cancel_and_results_batch() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen["requests"].append((request.method, str(request.url)))
-        if request.method == "POST" and str(request.url) == "https://anthropic.test/v1/messages/batches":
+        if (
+            request.method == "POST"
+            and str(request.url) == "https://anthropic.test/v1/messages/batches"
+        ):
             seen["batch_payload"] = json.loads(request.content)
             return httpx.Response(
                 200,
@@ -132,7 +138,11 @@ async def _test_anthropic_create_get_cancel_and_results_batch() -> None:
                     },
                 },
             )
-        if request.method == "GET" and str(request.url) == "https://anthropic.test/v1/messages/batches/msgbatch_123":
+        if (
+            request.method == "GET"
+            and str(request.url)
+            == "https://anthropic.test/v1/messages/batches/msgbatch_123"
+        ):
             return httpx.Response(
                 200,
                 json={
@@ -149,7 +159,11 @@ async def _test_anthropic_create_get_cancel_and_results_batch() -> None:
                     },
                 },
             )
-        if request.method == "POST" and str(request.url) == "https://anthropic.test/v1/messages/batches/msgbatch_123/cancel":
+        if (
+            request.method == "POST"
+            and str(request.url)
+            == "https://anthropic.test/v1/messages/batches/msgbatch_123/cancel"
+        ):
             return httpx.Response(
                 200,
                 json={
@@ -164,7 +178,11 @@ async def _test_anthropic_create_get_cancel_and_results_batch() -> None:
                     },
                 },
             )
-        if request.method == "GET" and str(request.url) == "https://anthropic.test/v1/messages/batches/msgbatch_123/results":
+        if (
+            request.method == "GET"
+            and str(request.url)
+            == "https://anthropic.test/v1/messages/batches/msgbatch_123/results"
+        ):
             return httpx.Response(
                 200,
                 text=json.dumps(
@@ -200,7 +218,9 @@ async def _test_anthropic_create_get_cancel_and_results_batch() -> None:
             items=[
                 BatchRequestItem(
                     custom_id="case-1",
-                    request=GenerateRequest(messages=[Message(role=Role.USER, content="hello")]),
+                    request=GenerateRequest(
+                        messages=[Message(role=Role.USER, content="hello")]
+                    ),
                 )
             ],
         )
@@ -256,7 +276,9 @@ async def _test_anthropic_create_batch_does_not_retry_resource_creation() -> Non
                 items=[
                     BatchRequestItem(
                         custom_id="case-1",
-                        request=GenerateRequest(messages=[Message(role=Role.USER, content="hello")]),
+                        request=GenerateRequest(
+                            messages=[Message(role=Role.USER, content="hello")]
+                        ),
                     )
                 ]
             )

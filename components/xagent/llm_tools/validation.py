@@ -39,7 +39,9 @@ def validate_app_tool_call(call: AppToolCall, definition: AppToolDefinition) -> 
             _raise_type_error(definition, name, expected_type)
 
 
-def _raise_type_error(definition: AppToolDefinition, field_name: str, expected_type: str) -> None:
+def _raise_type_error(
+    definition: AppToolDefinition, field_name: str, expected_type: str
+) -> None:
     raise AppToolCallValidationError(
         LLMErrorPayload(
             provider="app",

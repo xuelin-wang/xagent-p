@@ -13,7 +13,9 @@ def test_factory_uses_injected_registry() -> None:
     registry = ProviderRegistry()
     registry.register("openai", DummyProvider)
 
-    provider = LLMClientFactory(registry).create(ProviderConfig(provider="openai", default_model="m"))
+    provider = LLMClientFactory(registry).create(
+        ProviderConfig(provider="openai", default_model="m")
+    )
 
     assert isinstance(provider, DummyProvider)
 

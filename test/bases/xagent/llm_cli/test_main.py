@@ -56,19 +56,27 @@ class FakeProvider:
 
     async def upload_file(self, request):
         self.calls.append(("upload_file", request))
-        return UploadedFile(provider="openai", file_id="file-123", purpose=FilePurpose.PROMPT_INPUT)
+        return UploadedFile(
+            provider="openai", file_id="file-123", purpose=FilePurpose.PROMPT_INPUT
+        )
 
     async def create_batch(self, request):
         self.calls.append(("create_batch", request))
-        return BatchJob(provider="openai", batch_id="batch-123", status=BatchStatus.VALIDATING)
+        return BatchJob(
+            provider="openai", batch_id="batch-123", status=BatchStatus.VALIDATING
+        )
 
     async def get_batch(self, batch_id):
         self.calls.append(("get_batch", batch_id))
-        return BatchJob(provider="openai", batch_id=batch_id, status=BatchStatus.SUCCEEDED)
+        return BatchJob(
+            provider="openai", batch_id=batch_id, status=BatchStatus.SUCCEEDED
+        )
 
     async def get_batch_results(self, batch_id):
         self.calls.append(("get_batch_results", batch_id))
-        return BatchResults(provider="openai", batch_id=batch_id, status=BatchStatus.SUCCEEDED, items=[])
+        return BatchResults(
+            provider="openai", batch_id=batch_id, status=BatchStatus.SUCCEEDED, items=[]
+        )
 
 
 def test_build_parser_has_expected_commands() -> None:
@@ -158,7 +166,9 @@ def test_structured_output_type_enforces_json_schema() -> None:
     ).model_dump() == {"status": "ok", "count": 1, "nested": {"enabled": True}}
 
     with pytest.raises(ValidationError, match="JSON Schema validation failed"):
-        output_type.model_validate({"status": "bad", "count": 0, "nested": {"enabled": "yes"}})
+        output_type.model_validate(
+            {"status": "bad", "count": 0, "nested": {"enabled": "yes"}}
+        )
 
 
 def test_structured_output_type_rejects_invalid_json_schema() -> None:

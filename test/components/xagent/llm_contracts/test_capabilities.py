@@ -19,7 +19,9 @@ def test_assert_capability_passes_when_supported() -> None:
 
 
 def test_assert_capability_raises_when_missing() -> None:
-    capabilities = ModelCapabilities(provider="anthropic", model="claude", capabilities=set())
+    capabilities = ModelCapabilities(
+        provider="anthropic", model="claude", capabilities=set()
+    )
 
     with pytest.raises(UnsupportedCapabilityError) as exc_info:
         assert_capability(capabilities, Capability.EMBEDDINGS)

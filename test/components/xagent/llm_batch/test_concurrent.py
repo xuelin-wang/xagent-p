@@ -8,7 +8,9 @@ class EchoProvider:
     provider_name = "echo"
 
     async def generate(self, request: GenerateRequest) -> GenerateResponse:
-        return GenerateResponse(provider="echo", model="echo-model", text=str(request.messages[0].content))
+        return GenerateResponse(
+            provider="echo", model="echo-model", text=str(request.messages[0].content)
+        )
 
 
 async def _test_generate_many() -> None:

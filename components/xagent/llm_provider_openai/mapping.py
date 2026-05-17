@@ -30,7 +30,11 @@ def message_to_openai_input(message: Message) -> dict[str, Any]:
     else:
         text = "\n".join(part.text for part in content)
     if message.role == Role.TOOL and message.tool_call_id:
-        return {"type": "function_call_output", "call_id": message.tool_call_id, "output": text}
+        return {
+            "type": "function_call_output",
+            "call_id": message.tool_call_id,
+            "output": text,
+        }
     return {"role": message.role.value, "content": text}
 
 
@@ -62,10 +66,14 @@ def messages_to_openai_input(
     return mapped
 
 
-def request_to_openai_responses_payload(request: GenerateRequest, model: str) -> dict[str, Any]:
+def request_to_openai_responses_payload(
+    request: GenerateRequest, model: str
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": model,
-        "input": messages_to_openai_input(request.messages, _typed_file_inputs(request.files)),
+        "input": messages_to_openai_input(
+            request.messages, _typed_file_inputs(request.files)
+        ),
     }
     if request.temperature is not None:
         payload["temperature"] = request.temperature
@@ -76,7 +84,9 @@ def request_to_openai_responses_payload(request: GenerateRequest, model: str) ->
     if request.metadata:
         payload["metadata"] = request.metadata
     if request.response_format is not None:
-        payload["text"] = {"format": response_format_to_openai_text_format(request.response_format)}
+        payload["text"] = {
+            "format": response_format_to_openai_text_format(request.response_format)
+        }
     if request.app_tools:
         payload["tools"] = [
             app_tool_definition_to_openai_tool(tool)
@@ -149,7 +159,9 @@ def tool_choice_to_openai_tool_choice(tool_choice: Any) -> str | dict[str, Any]:
     return tool_choice
 
 
-def response_format_to_openai_text_format(response_format: ResponseFormat) -> dict[str, Any]:
+def response_format_to_openai_text_format(
+    response_format: ResponseFormat,
+) -> dict[str, Any]:
     if response_format.type == ResponseFormatType.TEXT:
         return {"type": "text"}
     if response_format.type == ResponseFormatType.JSON_OBJECT:
@@ -230,7 +242,9 @@ def _extract_provider_tool_traces(raw: dict[str, Any]) -> list[ProviderToolTrace
             ProviderToolTrace(
                 tool_type=_normalize_provider_tool_type(item_type),
                 name=item.get("name") if isinstance(item.get("name"), str) else None,
-                status=item.get("status") if isinstance(item.get("status"), str) else None,
+                status=item.get("status")
+                if isinstance(item.get("status"), str)
+                else None,
                 input_summary=_provider_tool_input_summary(item),
                 output_summary=_provider_tool_output_summary(item),
                 citations=_provider_tool_citations(item),
@@ -273,10 +287,16 @@ def _provider_tool_citations(item: dict[str, Any]) -> list[Citation]:
             continue
         citations.append(
             Citation(
-                title=source.get("title") if isinstance(source.get("title"), str) else None,
+                title=source.get("title")
+                if isinstance(source.get("title"), str)
+                else None,
                 url=source.get("url") if isinstance(source.get("url"), str) else None,
-                file_id=source.get("file_id") if isinstance(source.get("file_id"), str) else None,
-                quote=source.get("quote") if isinstance(source.get("quote"), str) else None,
+                file_id=source.get("file_id")
+                if isinstance(source.get("file_id"), str)
+                else None,
+                quote=source.get("quote")
+                if isinstance(source.get("quote"), str)
+                else None,
                 metadata={
                     key: value
                     for key, value in source.items()

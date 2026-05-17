@@ -51,7 +51,9 @@ async def _test_openai_upload_file_posts_multipart_and_normalizes_response() -> 
 
     uploaded = await provider.upload_file(
         FileUploadRequest(
-            source=BytesFileSource(filename="note.txt", data=b"hello", media_type="text/plain"),
+            source=BytesFileSource(
+                filename="note.txt", data=b"hello", media_type="text/plain"
+            ),
             purpose=FilePurpose.PROMPT_INPUT,
         )
     )
@@ -94,7 +96,9 @@ async def _test_openai_upload_file_does_not_retry_resource_creation() -> None:
     with pytest.raises(ProviderServerError):
         await provider.upload_file(
             FileUploadRequest(
-                source=BytesFileSource(filename="note.txt", data=b"hello", media_type="text/plain"),
+                source=BytesFileSource(
+                    filename="note.txt", data=b"hello", media_type="text/plain"
+                ),
                 purpose=FilePurpose.PROMPT_INPUT,
             )
         )
@@ -153,7 +157,9 @@ async def _test_openai_delete_file_does_not_retry_ambiguous_delete() -> None:
     )
 
     with pytest.raises(ProviderServerError):
-        await provider.delete_file(FileDeleteRequest(provider="openai", file_id="file-123"))
+        await provider.delete_file(
+            FileDeleteRequest(provider="openai", file_id="file-123")
+        )
 
     assert calls == 1
 

@@ -25,7 +25,9 @@ class AppConfig(StrictConfigModel):
     uvicorn: UvicornConfig = UvicornConfig()
 
 
-def test_load_typed_config_merges_files_with_later_file_precedence_and_env_map_wins(tmp_path: Path):
+def test_load_typed_config_merges_files_with_later_file_precedence_and_env_map_wins(
+    tmp_path: Path,
+):
     first_yaml = tmp_path / "base.yaml"
     first_yaml.write_text(
         "\n".join(

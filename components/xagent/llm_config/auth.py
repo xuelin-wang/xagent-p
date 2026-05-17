@@ -24,5 +24,7 @@ def require_api_key(config: ProviderConfig) -> SecretStr:
     api_key = resolve_api_key(config)
     if api_key is None:
         env_name = config.api_key_env or DEFAULT_API_KEY_ENV.get(config.provider)
-        raise ValueError(f"Missing API key for provider '{config.provider}' via {env_name}.")
+        raise ValueError(
+            f"Missing API key for provider '{config.provider}' via {env_name}."
+        )
     return api_key
