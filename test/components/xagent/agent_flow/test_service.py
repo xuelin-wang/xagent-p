@@ -1,6 +1,15 @@
 import asyncio
+from pathlib import Path
 
-from xagent.agent_flow.config import AgentFlowAppConfig, SubagentConfig
+from test.components.xagent.agent_flow.test_llm_adapter import FakeLLMProvider
+
+from xagent.agent_flow.config import (
+    AgentFlowAppConfig,
+    AgentModelConfig,
+    PlannerConfig,
+    SubagentConfig,
+    SummaryConfig,
+)
 from xagent.agent_flow.models import AgentFlowState, FlowStage, RunStatus
 from xagent.agent_flow.planner import FakePlannerExecutor
 from xagent.agent_flow.service import AgentFlowService
@@ -10,6 +19,19 @@ from xagent.agent_persistence.memory import (
     InMemoryRunRepository,
     InMemoryStepRepository,
 )
+from xagent.llm_config import ProviderConfig
+
+
+class FakeLLMFactory:
+    def __init__(self) -> None:
+        self.configs: list[ProviderConfig] = []
+        self.providers: list[FakeLLMProvider] = []
+
+    def create(self, config: ProviderConfig) -> FakeLLMProvider:
+        self.configs.append(config)
+        provider = FakeLLMProvider()
+        self.providers.append(provider)
+        return provider
 
 
 def _config() -> AgentFlowAppConfig:
@@ -104,3 +126,58 @@ async def _service_resume_continues_nonterminal_checkpoint() -> None:
     assert resumed.final_response == (
         "manuals handled query 'diagnose no start' for iteration 0."
     )
+
+
+def test_service_uses_llm_executors_for_non_fake_model_config(
+    tmp_path: Path,
+) -> None:
+    asyncio.run(_service_uses_llm_executors_for_non_fake_model_config(tmp_path))
+
+
+async def _service_uses_llm_executors_for_non_fake_model_config(
+    tmp_path: Path,
+) -> None:
+    planner_prompt = tmp_path / "planner.md"
+    summary_prompt = tmp_path / "summary.md"
+    planner_prompt.write_text("planner system", encoding="utf-8")
+    summary_prompt.write_text("summary system", encoding="utf-8")
+    llm_factory = FakeLLMFactory()
+    service = AgentFlowService.in_memory(
+        AgentFlowAppConfig(
+            planner=PlannerConfig(
+                prompt_template=str(planner_prompt),
+                model="reasoning",
+            ),
+            summary=SummaryConfig(
+                prompt_template=str(summary_prompt),
+                model="reasoning",
+            ),
+            subagents={
+                "manuals": SubagentConfig(
+                    name="manuals",
+                    description="Search service manuals.",
+                    prompt_template="prompts/agent_flow/subagents/manuals.md",
+                )
+            },
+            models={
+                "reasoning": AgentModelConfig(
+                    provider="openai",
+                    model="gpt-test",
+                    temperature=0.0,
+                )
+            },
+        ),
+        llm_factory=llm_factory,
+    )
+
+    result = await service.start_run(user_query="diagnose no start")
+
+    assert result.status is RunStatus.COMPLETED
+    assert result.final_response == "summary answer"
+    assert [config.provider for config in llm_factory.configs] == ["openai", "openai"]
+    assert [config.default_model for config in llm_factory.configs] == [
+        "gpt-test",
+        "gpt-test",
+    ]
+    assert len(llm_factory.providers[0].structured_requests) == 1
+    assert len(llm_factory.providers[1].structured_requests) == 1

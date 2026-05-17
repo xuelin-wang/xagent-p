@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+from typing import Protocol
 from uuid import uuid4
 
-from xagent.agent_flow.config import AgentFlowAppConfig
+from xagent.agent_flow.config import AgentFlowAppConfig, AgentModelConfig
+from xagent.agent_flow.llm_adapter import AgentFlowLLMAdapter
 from xagent.agent_flow.models import AgentFlowState, RunStatus
-from xagent.agent_flow.planner import FakePlannerExecutor, PlannerExecutor
+from xagent.agent_flow.planner import (
+    FakePlannerExecutor,
+    LLMPlannerExecutor,
+    PlannerExecutor,
+)
 from xagent.agent_flow.runtime import AgentFlowRuntime
 from xagent.agent_flow.subagents import FlowSubagent, fake_subagents_from_config
-from xagent.agent_flow.summary import FakeSummaryExecutor, SummaryExecutor
+from xagent.agent_flow.summary import (
+    FakeSummaryExecutor,
+    LLMSummaryExecutor,
+    SummaryExecutor,
+)
 from xagent.agent_persistence.memory import (
     InMemoryCheckpointRepository,
     InMemoryRunRepository,
@@ -18,6 +28,12 @@ from xagent.agent_persistence.repositories import (
     RunRepository,
     StepRepository,
 )
+from xagent.llm_config import ProviderConfig
+from xagent.llm_registry import LLMClientFactory, LLMProvider
+
+
+class AgentFlowLLMFactory(Protocol):
+    def create(self, config: ProviderConfig) -> LLMProvider: ...
 
 
 class AgentFlowService:
@@ -40,6 +56,7 @@ class AgentFlowService:
         planner: PlannerExecutor | None = None,
         subagents: dict[str, FlowSubagent] | None = None,
         summary: SummaryExecutor | None = None,
+        llm_factory: AgentFlowLLMFactory | None = None,
     ) -> AgentFlowService:
         run_repository = InMemoryRunRepository()
         step_repository = InMemoryStepRepository()
@@ -52,6 +69,7 @@ class AgentFlowService:
             planner=planner,
             subagents=subagents,
             summary=summary,
+            llm_factory=llm_factory,
         )
 
     @classmethod
@@ -65,15 +83,20 @@ class AgentFlowService:
         planner: PlannerExecutor | None = None,
         subagents: dict[str, FlowSubagent] | None = None,
         summary: SummaryExecutor | None = None,
+        llm_factory: AgentFlowLLMFactory | None = None,
     ) -> AgentFlowService:
+        executor_factory = AgentFlowExecutorFactory(
+            config=config,
+            llm_factory=llm_factory or LLMClientFactory(),
+        )
         runtime = AgentFlowRuntime(
             config=config,
             run_repository=run_repository,
             step_repository=step_repository,
             checkpoint_repository=checkpoint_repository,
-            planner=planner or FakePlannerExecutor(),
+            planner=planner or executor_factory.planner(),
             subagents=subagents or fake_subagents_from_config(config.subagents),
-            summary=summary or FakeSummaryExecutor(),
+            summary=summary or executor_factory.summary(),
         )
         return cls(
             runtime=runtime,
@@ -105,3 +128,54 @@ class AgentFlowService:
         if state.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
             return state
         return await self._runtime.resume(state)
+
+
+class AgentFlowExecutorFactory:
+    def __init__(
+        self,
+        *,
+        config: AgentFlowAppConfig,
+        llm_factory: AgentFlowLLMFactory,
+    ):
+        self._config = config
+        self._llm_factory = llm_factory
+
+    def planner(self) -> PlannerExecutor:
+        model_config = self._model_config(self._config.planner.model)
+        if model_config.provider == "fake":
+            return FakePlannerExecutor()
+        return LLMPlannerExecutor(
+            config=self._config.planner,
+            llm=self._adapter(model_config),
+        )
+
+    def summary(self) -> SummaryExecutor:
+        model_config = self._model_config(self._config.summary.model)
+        if model_config.provider == "fake":
+            return FakeSummaryExecutor()
+        return LLMSummaryExecutor(
+            config=self._config.summary,
+            llm=self._adapter(model_config),
+        )
+
+    def _adapter(self, model_config: AgentModelConfig) -> AgentFlowLLMAdapter:
+        if model_config.provider == "fake":
+            raise ValueError("Fake agent-flow models do not use an LLM provider.")
+        provider = self._llm_factory.create(
+            ProviderConfig(
+                provider=model_config.provider,
+                default_model=model_config.model,
+            )
+        )
+        return AgentFlowLLMAdapter(
+            provider=provider,
+            models=self._config.models,
+        )
+
+    def _model_config(self, model_name: str) -> AgentModelConfig:
+        configured = self._config.models.get(model_name)
+        if configured is not None:
+            return configured
+        if model_name == "default_reasoning":
+            return AgentModelConfig()
+        raise KeyError(f"Agent flow model is not configured: {model_name}")

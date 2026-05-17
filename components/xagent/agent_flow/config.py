@@ -18,7 +18,7 @@ class AgentWorkflowConfig(StrictConfigModel):
 
 
 class AgentModelConfig(StrictConfigModel):
-    provider: str = "fake"
+    provider: Literal["fake", "openai", "anthropic"] = "fake"
     model: str = "fake"
     temperature: float = 0.0
     timeout_seconds: float = 60.0
