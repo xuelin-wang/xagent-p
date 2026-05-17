@@ -49,8 +49,24 @@ class AgentFlowRuntime:
         self._step_runner = StepRunner(step_repository)
 
     async def run(self, state: AgentFlowState) -> AgentFlowState:
+        return await self._run_loop(state, create_run=True)
+
+    async def resume(self, state: AgentFlowState) -> AgentFlowState:
+        if state.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
+            return state
+        return await self._run_loop(state, create_run=False)
+
+    async def _run_loop(
+        self,
+        state: AgentFlowState,
+        *,
+        create_run: bool,
+    ) -> AgentFlowState:
         state.status = RunStatus.RUNNING
-        await self._run_repository.create_run(state)
+        if create_run:
+            await self._run_repository.create_run(state)
+        else:
+            await self._run_repository.update_run_state(state)
         await self._save_state(state, checkpoint_name="start")
 
         while True:
