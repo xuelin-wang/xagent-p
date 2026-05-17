@@ -118,3 +118,29 @@ Source pointers:
 - `skills/mementum-memory/SKILL.md`
 - `AGENTS.md`
 - `CLAUDE.md`
+
+## 2026-05-17 - Plan Custom Durable Agent Runtime Without LangGraph
+
+Status: planned
+
+Decision:
+- Design a custom durable agent-flow runtime under the existing `xagent` Polylith layout rather than adopting LangGraph or adding a parallel `src/` package.
+- Keep `components/xagent/langchain_agents/` as a working sample/legacy reference during the new runtime implementation.
+- Reuse or extend existing xagent features before introducing parallel LLM, tool, config, retry, structured-output, HTTP, or runtime-config abstractions.
+
+Rationale:
+- The repository already has shared LLM/provider/tool/config bricks that should remain the starting point for new agent runtime work.
+- A custom runtime can add durable planner/subagent/summary/replan behavior while keeping implementation ownership inside existing `components/xagent/` and `bases/xagent/` boundaries.
+- Keeping the LangChain sample avoids an unnecessary migration during the first durable runtime PR.
+
+Implications:
+- New reusable runtime code should live under `components/xagent/agent_flow/` and related Polylith components only when existing bricks cannot be cleanly extended.
+- Runtime entrypoints should live under `bases/xagent/`.
+- Any new agent-facing adapter over existing LLM or tool components should be thin and documented.
+
+Source pointers:
+- `mementum/knowledge/agent-runtime-framework-design.md`
+- `components/xagent/langchain_agents/`
+- `components/xagent/llm_contracts/`
+- `components/xagent/llm_registry/`
+- `components/xagent/llm_tools/`

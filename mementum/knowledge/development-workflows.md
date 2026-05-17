@@ -104,7 +104,4 @@ ln -s ../../skills/mementum-memory .claude/skills/mementum-memory
 - `deploy/langchain-service/values.yaml`
 - `README.md`
 - `skills/mementum-memory/SKILL.md`
-
-## To Be Verified
-
-- No CI workflow files were found under `.github/`.
+- `.github/workflows/ci.yml`
