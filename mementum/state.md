@@ -17,12 +17,10 @@
 
 ## Next Steps
 
-- Verify whether there is intended CI outside this repository; no `.github/` workflow files were found.
 - Keep updating memory only when a durable implementation lesson or design decision is learned.
 
 ## Blockers / Unknowns
 
-- CI configuration is not present in the checked-out repo.
 - `README.md` still contains TODO-level notes for logging/tracing work.
 
 ## Recent Decisions
@@ -34,6 +32,7 @@
 - Reusable coding-agent workflow prompts belong under `prompts/`; project-memory maintenance workflows belong under `skills/mementum-memory/`.
 - ruff (>= 0.15.13) and mypy (>= 2.1.0, strict mode) are the standard lint and type-check tools; all existing ruff lint, ruff format, and mypy strict violations have been resolved.
 - The mementum skill requires explicit user approval before any write to `mementum/`; enforced in SKILL.md and all six reference workflow files.
+- GitHub Actions CI added at `.github/workflows/ci.yml`; runs ruff check, ruff format --check, mypy, and pytest on every push and PR to main.
 
 ## Source Pointers
 
