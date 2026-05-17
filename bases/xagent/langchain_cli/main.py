@@ -3,7 +3,7 @@ import asyncio
 import sys
 
 from langchain_openai import ChatOpenAI
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 
 from xagent.config import StrictConfigModel
 from xagent.langchain_agents.app import LangChainMultiAgentApp
@@ -18,7 +18,10 @@ class CliConfig(StrictConfigModel):
     openai_model: str = "gpt-4.1-mini"
     openai_embedding_model: str = "text-embedding-3-small"
     xagent_max_wait_seconds: float = 10.0
-    openai_api_key: SecretStr | None = None
+    openai_api_key: SecretStr | None = Field(
+        default=None,
+        json_schema_extra={"secret": True, "env_var": "OPENAI_API_KEY"},
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:

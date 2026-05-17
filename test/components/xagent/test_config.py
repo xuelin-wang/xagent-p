@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from pydantic import Field, ValidationError
+from pydantic import Field, SecretStr, ValidationError
 
 from xagent.config import StrictConfigModel, load_typed_config
 
@@ -20,9 +20,17 @@ class FastAPIConfig(StrictConfigModel):
     cors: CorsConfig = CorsConfig()
 
 
+class CredentialsConfig(StrictConfigModel):
+    api_key: SecretStr | None = Field(
+        default=None,
+        json_schema_extra={"secret": True, "env_var": "APP_API_KEY"},
+    )
+
+
 class AppConfig(StrictConfigModel):
     fastapi: FastAPIConfig = FastAPIConfig()
     uvicorn: UvicornConfig = UvicornConfig()
+    credentials: CredentialsConfig = CredentialsConfig()
 
 
 def test_load_typed_config_merges_files_with_later_file_precedence_and_env_map_wins(
@@ -39,6 +47,8 @@ def test_load_typed_config_merges_files_with_later_file_precedence_and_env_map_w
                 "  cors:",
                 "    allow_origins:",
                 "      - https://base.example.com",
+                "credentials:",
+                "  api_key: yaml-secret",
             ]
         ),
         encoding="utf-8",
@@ -47,9 +57,8 @@ def test_load_typed_config_merges_files_with_later_file_precedence_and_env_map_w
     second_env.write_text(
         "\n".join(
             [
-                "UVICORN__PORT=9100",
-                "UVICORN__RELOAD=false",
-                'FASTAPI__CORS__ALLOW_ORIGINS=["https://override.example.com"]',
+                "APP_API_KEY=file-secret",
+                "UNRELATED_ENV_FILE=ignored",
             ]
         ),
         encoding="utf-8",
@@ -57,14 +66,16 @@ def test_load_typed_config_merges_files_with_later_file_precedence_and_env_map_w
 
     config = load_typed_config(
         AppConfig,
-        env_map={"UVICORN__PORT": "9300", "UVICORN__RELOAD": "true"},
+        env_map={"APP_API_KEY": "env-secret", "UNRELATED_ENV": "ignored"},
         input_files=[first_yaml, second_env],
     )
 
     assert config.uvicorn.host == "yaml-host"
-    assert config.uvicorn.port == 9300
-    assert config.uvicorn.reload is True
-    assert config.fastapi.cors.allow_origins == ["https://override.example.com"]
+    assert config.uvicorn.port == 8100
+    assert config.uvicorn.reload is False
+    assert config.fastapi.cors.allow_origins == ["https://base.example.com"]
+    assert config.credentials.api_key is not None
+    assert config.credentials.api_key.get_secret_value() == "env-secret"
 
 
 def test_load_typed_config_treats_yaml_extension_case_insensitively(
@@ -104,13 +115,12 @@ def test_load_typed_config_rejects_extra_fields(tmp_path: Path) -> None:
         load_typed_config(AppConfig, env_map=None, input_files=[yaml_file])
 
 
-def test_load_typed_config_applies_type_conversion(tmp_path: Path) -> None:
+def test_load_typed_config_applies_env_file_override(tmp_path: Path) -> None:
     env_file = tmp_path / "config.env"
     env_file.write_text(
         "\n".join(
             [
-                "UVICORN__PORT=9200",
-                "UVICORN__RELOAD=true",
+                "APP_API_KEY=envfile-secret",
             ]
         ),
         encoding="utf-8",
@@ -118,8 +128,8 @@ def test_load_typed_config_applies_type_conversion(tmp_path: Path) -> None:
 
     config = load_typed_config(AppConfig, env_map=None, input_files=[env_file])
 
-    assert config.uvicorn.port == 9200
-    assert config.uvicorn.reload is True
+    assert config.credentials.api_key is not None
+    assert config.credentials.api_key.get_secret_value() == "envfile-secret"
 
 
 def test_load_typed_config_rejects_invalid_yaml_key_names(
@@ -145,6 +155,17 @@ def test_load_typed_config_rejects_invalid_model_field_names() -> None:
         bad_name_: str = "oops"
 
     with pytest.raises(ValueError, match="may not end with an underscore"):
+        load_typed_config(InvalidConfig, env_map=None, input_files=[])
+
+
+def test_load_typed_config_rejects_invalid_env_var_metadata() -> None:
+    class InvalidConfig(StrictConfigModel):
+        api_key: SecretStr | None = Field(
+            default=None,
+            json_schema_extra={"secret": True, "env_var": "bad_name"},
+        )
+
+    with pytest.raises(ValueError, match="Invalid env var name"):
         load_typed_config(InvalidConfig, env_map=None, input_files=[])
 
 

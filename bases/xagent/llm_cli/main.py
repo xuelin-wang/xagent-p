@@ -10,7 +10,7 @@ from jsonschema import ValidationError as JsonSchemaValidationError
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from xagent.llm_batch import BatchCreateRequest, BatchRequestItem, EmbeddingRequest
-from xagent.llm_config import DEFAULT_API_KEY_ENV, ProviderConfig
+from xagent.llm_config import ProviderConfig, build_provider_config
 from xagent.llm_contracts import GenerateRequest, Message, Role
 from xagent.llm_files import FilePurpose, FileUploadRequest, LocalFileSource
 from xagent.llm_registry import LLMClientFactory
@@ -26,7 +26,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--provider", choices=["openai", "anthropic"], default="openai")
     parser.add_argument("--model")
     parser.add_argument("--base-url")
-    parser.add_argument("--api-key-env")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     text = subparsers.add_parser("text", help="Generate text.")
@@ -147,10 +146,9 @@ async def _dispatch(provider: Any, args: argparse.Namespace) -> Any:
 
 
 def _provider_config(args: argparse.Namespace) -> ProviderConfig:
-    return ProviderConfig(
+    return build_provider_config(
         provider=args.provider,
         default_model=args.model or _default_model(args.provider),
-        api_key_env=args.api_key_env or DEFAULT_API_KEY_ENV[args.provider],
         base_url=args.base_url,
     )
 

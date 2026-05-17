@@ -1,7 +1,6 @@
-import os
 from typing import Literal
 
-from xagent.llm_config import ProviderConfig
+from xagent.llm_config import ProviderConfig, build_provider_config
 from xagent.llm_registry.provider_protocol import LLMProvider
 from xagent.llm_registry.registry import ProviderRegistry
 
@@ -34,9 +33,8 @@ class LLMClientFactory:
         model: str | None = None,
     ) -> LLMProvider:
         return self.create(
-            ProviderConfig(
+            build_provider_config(
                 provider=provider,
                 default_model=model or DEFAULT_MODELS[provider],
-                api_key_env=os.environ.get(f"{provider.upper()}_API_KEY_ENV"),
             )
         )

@@ -14,11 +14,14 @@ def test_resolve_api_key_prefers_explicit_secret(
         api_key=SecretStr("explicit-key"),
     )
 
-    assert resolve_api_key(config).get_secret_value() == "explicit-key"
+    api_key = resolve_api_key(config)
+    assert api_key is not None
+    assert api_key.get_secret_value() == "explicit-key"
 
 
 def test_resolve_api_key_uses_default_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
     config = ProviderConfig(provider="anthropic", default_model="claude-sonnet-4-6")
 
-    assert require_api_key(config).get_secret_value() == "anthropic-key"
+    api_key = require_api_key(config)
+    assert api_key.get_secret_value() == "anthropic-key"

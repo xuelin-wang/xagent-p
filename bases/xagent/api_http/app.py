@@ -42,7 +42,10 @@ class ApiHttpConfig(StrictConfigModel):
     openai_model: str = "gpt-4.1-mini"
     openai_embedding_model: str = "text-embedding-3-small"
     xagent_max_wait_seconds: float = 10.0
-    openai_api_key: SecretStr | None = None
+    openai_api_key: SecretStr | None = Field(
+        default=None,
+        json_schema_extra={"secret": True, "env_var": "OPENAI_API_KEY"},
+    )
 
 
 def _raise_provider_auth_error(exc: AuthenticationError) -> None:
