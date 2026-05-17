@@ -59,6 +59,7 @@ Before major work:
 4. Inspect the code.
 5. Make a minimal, testable change.
 6. Propose memory updates if durable lessons were learned.
+7. Wait for explicit user approval before writing any changes to `mementum/`.
 
 ## Human Review
 

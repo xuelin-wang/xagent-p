@@ -33,6 +33,7 @@
 - Native batch callers provide `items`; public pre-uploaded batch input-file support was removed.
 - Reusable coding-agent workflow prompts belong under `prompts/`; project-memory maintenance workflows belong under `skills/mementum-memory/`.
 - ruff (>= 0.15.13) and mypy (>= 2.1.0, strict mode) were adopted as the standard lint and type-check tools; all existing violations were fixed at adoption time.
+- The mementum skill requires explicit user approval before any write to `mementum/`; enforced in SKILL.md and all six reference workflow files.
 
 ## Source Pointers
 
