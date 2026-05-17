@@ -63,14 +63,12 @@ Architectural boundaries:
 - `.dockerignore`
 - `prompts/README.md`
 - `skills/mementum-memory/SKILL.md`
+- `mementum/knowledge/agent-runtime-framework-design.md`
 
 ## Notes for Future Agents
 
 - Do not add `src/` or `src/common_llm` style layout unless the Polylith configuration changes.
 - Before changing LLM provider behavior, read the relevant provider tests and architecture decisions in project memory.
+- The custom durable agent runtime is design-stage only; read `mementum/knowledge/agent-runtime-framework-design.md` before implementing it.
 - Use `prompts/` for reusable coding-agent workflows and `skills/mementum-memory/` for project-memory maintenance workflows.
 - Keep memory as an orientation map; use source files for detailed APIs.
-
-## To Be Verified
-
-- Whether project-level CI exists outside this checkout.

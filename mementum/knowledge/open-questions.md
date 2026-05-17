@@ -15,19 +15,6 @@ Track unresolved questions that are useful before implementation work.
 
 ## Questions
 
-## CI Location
-
-Status: open
-
-Question:
-- Is CI configured outside this repository, or has it not been added yet?
-
-Context:
-- No `.github/` workflow files were found in the checkout.
-
-Source pointers:
-- `.github/` search result from repository inspection
-
 ## Logging and Tracing Policy
 
 Status: open

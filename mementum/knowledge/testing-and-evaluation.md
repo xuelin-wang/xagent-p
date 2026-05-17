@@ -21,6 +21,7 @@ Summarize validation strategy without duplicating the test suite.
 - `pyproject.toml` sets `addopts = "-m 'not require_env'"`, so `pytest` excludes live/env-gated tests by default.
 - Live tests cover OpenAI and Anthropic generation, structured output, tool calls, file upload/delete, and batch operations where supported.
 - The repository has a Kubernetes smoke test script for the LangChain service that builds the image, loads it into kind, installs the Helm chart, checks `/healthz`, and posts to `/query`.
+- GitHub Actions CI runs ruff check, ruff format check, mypy, and pytest on pushes and pull requests to `main`.
 
 ## Required Validation Commands
 
@@ -52,8 +53,6 @@ OPENAI_API_KEY=... scripts/test-kind-langchain-service.sh
 
 ## Known Testing Gaps
 
-- No checked-in CI workflow was found.
-- No dedicated lint/type-check command is configured.
 - Live provider tests depend on network, provider availability, credentials, and cost.
 
 ## Source Pointers
@@ -64,6 +63,7 @@ OPENAI_API_KEY=... scripts/test-kind-langchain-service.sh
 - `test/integration/test_openai_live.py`
 - `test/integration/test_anthropic_live.py`
 - `scripts/test-kind-langchain-service.sh`
+- `.github/workflows/ci.yml`
 
 ## Notes for Future Agents
 

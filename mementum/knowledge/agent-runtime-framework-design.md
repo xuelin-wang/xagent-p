@@ -1,4 +1,16 @@
-Design Doc: Custom Durable Agent Flow Runtime for xagent-p
+---
+title: Agent Runtime Framework Design
+status: planned
+category: architecture
+tags: [agent-runtime, durability, polylith, langchain]
+related:
+  - architecture-decisions
+  - implementation-invariants
+  - codebase-map
+---
+
+# Design Doc: Custom Durable Agent Flow Runtime for xagent-p
+
 1. Goal
 
 Implement a custom agentic flow runtime without LangGraph.
