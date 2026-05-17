@@ -27,6 +27,8 @@ Rules:
 4. Mark uncertain items as unknown or to be verified.
 5. Do not store secrets, runtime data, private data, raw logs, or large generated artifacts.
 
+Before writing, present the proposed changes and wait for explicit user approval.
+
 After editing, report:
 
 1. What state changed.

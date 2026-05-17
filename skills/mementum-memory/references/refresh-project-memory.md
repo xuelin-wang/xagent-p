@@ -33,6 +33,8 @@ Avoid:
 
 For uncertain items, mark them as "To be verified" or put them in `mementum/knowledge/open-questions.md`.
 
+Before writing, present the proposed changes and wait for explicit user approval.
+
 After editing, show:
 
 1. Updated files.

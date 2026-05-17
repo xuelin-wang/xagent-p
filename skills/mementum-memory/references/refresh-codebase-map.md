@@ -22,6 +22,8 @@ Do not:
 
 For uncertain items, mark them as "To be verified."
 
+Before writing, present the proposed changes and wait for explicit user approval.
+
 After editing, summarize:
 
 1. What changed.

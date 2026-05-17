@@ -28,19 +28,6 @@ Context:
 Source pointers:
 - `.github/` search result from repository inspection
 
-## Lint and Type Checking
-
-Status: open
-
-Question:
-- Should this repo adopt dedicated linting and type-checking commands?
-
-Context:
-- `pyproject.toml` configures pytest but no lint/type-check tool configuration was found.
-
-Source pointers:
-- `pyproject.toml`
-
 ## Logging and Tracing Policy
 
 Status: open

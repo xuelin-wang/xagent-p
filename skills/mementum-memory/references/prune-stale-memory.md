@@ -26,6 +26,8 @@ When fixing:
 4. Move repeated lessons into knowledge pages when appropriate.
 5. Remove or replace unsafe content.
 
+Before writing, present the proposed changes and wait for explicit user approval.
+
 After editing, summarize:
 
 1. Stale or risky memory found.

@@ -23,6 +23,14 @@ uv sync --active
 uv add <package>
 ```
 
+Run lint and format checks:
+
+```bash
+uv run --active ruff check .
+uv run --active ruff format --check .
+uv run --active mypy components bases
+```
+
 Run tests:
 
 ```bash
@@ -92,5 +100,4 @@ ln -s ../../skills/mementum-memory .claude/skills/mementum-memory
 
 ## To Be Verified
 
-- No lint or type-check command is configured in repo metadata.
 - No CI workflow files were found under `.github/`.

@@ -27,16 +27,17 @@ Do not store secrets, credentials, personal data, customer data, production data
 3. Search `mementum/knowledge/` for relevant design, workflow, testing, security, and open-question context.
 4. Search `mementum/memories/` for known pitfalls or durable lessons.
 5. Inspect the current repository files needed to verify memory against code.
-6. Update memory only when a durable fact, decision, convention, workflow, lesson, or open question changed.
-7. Keep edits concise and source-backed.
-8. Report updated files, why the update was durable, source pointers used, and confirmation that no sensitive/runtime data was added.
+6. Propose changes: list each file, what would be added/changed/removed, and why each item is durable.
+7. Wait for explicit user approval.
+8. Write only the approved changes, keeping edits concise and source-backed.
+9. Report updated files, why each update was durable, source pointers used, and confirmation that no sensitive/runtime data was added.
 
 ## Choose a Workflow
 
 Prefer these action words when choosing the workflow:
 
-- `refresh state`: refresh current project state; read `references/refresh-project-state.md`.
-- `refresh codemap`: refresh the codebase map; read `references/refresh-codebase-map.md`.
+- `refresh-state`: refresh current project state; read `references/refresh-project-state.md`.
+- `refresh-codemap`: refresh the codebase map; read `references/refresh-codebase-map.md`.
 - `refresh`: refresh broader project memory; read `references/refresh-project-memory.md`.
 - `decide`: make an end-of-task memory decision; read `references/update-project-memory.md`.
 - `synthesize`: synthesize repeated memories into knowledge; read `references/synthesize-memories.md`.
@@ -51,6 +52,10 @@ Read only the reference needed for the user's request.
 - Use `mementum/knowledge/` for synthesized design, workflow, testing, security, architecture, policy, or open-question context.
 - Use changelogs for detailed change explanations, not durable project state.
 - Use `skills/mementum-memory/` for this memory-maintenance workflow; do not duplicate these workflows under `prompts/maintenance/`.
+
+## Approval
+
+Always propose memory changes before writing, regardless of how the skill was invoked. For each proposed change, explain which file is affected and why the change is durable. Wait for explicit user approval before modifying any file under `mementum/`. Do not write changes automatically.
 
 ## Quality Bar
 

@@ -18,16 +18,12 @@
 ## Next Steps
 
 - Verify whether there is intended CI outside this repository; no `.github/` workflow files were found.
-- Fill in lint/type-check commands if the project adopts dedicated tools.
-- If staged changelog deletions are intentional, update memory pages that still cite those historical changelog files.
 - Keep updating memory only when a durable implementation lesson or design decision is learned.
 
 ## Blockers / Unknowns
 
 - CI configuration is not present in the checked-out repo.
-- No dedicated lint or type-check command is configured in `pyproject.toml`.
 - `README.md` still contains TODO-level notes for logging/tracing work.
-- Several memory pages still reference historical changelog files that are currently absent from the index; verify whether those changelogs should be restored or the memory source pointers should be updated.
 
 ## Recent Decisions
 
@@ -36,6 +32,7 @@
 - LLM provider mutation operations should not be retried automatically without caller-level idempotency or deduplication.
 - Native batch callers provide `items`; public pre-uploaded batch input-file support was removed.
 - Reusable coding-agent workflow prompts belong under `prompts/`; project-memory maintenance workflows belong under `skills/mementum-memory/`.
+- ruff (>= 0.15.13) and mypy (>= 2.1.0, strict mode) were adopted as the standard lint and type-check tools; all existing violations were fixed at adoption time.
 
 ## Source Pointers
 

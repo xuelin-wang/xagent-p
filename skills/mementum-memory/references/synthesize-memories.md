@@ -19,6 +19,8 @@ Do not:
 - invent facts beyond source pointers
 - store secrets, runtime data, raw logs, private data, or large generated artifacts
 
+Before writing, present the proposed changes and wait for explicit user approval.
+
 After editing, summarize:
 
 1. Memories reviewed.
