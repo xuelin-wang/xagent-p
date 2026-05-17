@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from xagent.agent_flow.config import SummaryConfig
+from xagent.agent_flow.llm_adapter import AgentFlowLLMAdapter, read_prompt_template
 from xagent.agent_flow.models import (
     AgentFlowIteration,
     AgentFlowState,
@@ -53,4 +55,55 @@ class FakeSummaryExecutor:
         return SummaryOutput(
             decision=SummaryDecision.FAIL,
             rationale="Deterministic fake summary requested failure.",
+        )
+
+
+class LLMSummaryExecutor:
+    def __init__(
+        self,
+        *,
+        config: SummaryConfig,
+        llm: AgentFlowLLMAdapter,
+    ):
+        self._config = config
+        self._llm = llm
+
+    async def summarize(
+        self,
+        *,
+        state: AgentFlowState,
+        iteration: AgentFlowIteration,
+    ) -> SummaryOutput:
+        return await self._llm.generate_structured(
+            model_name=self._config.model,
+            system_prompt=read_prompt_template(self._config.prompt_template),
+            user_prompt=self._render_user_prompt(state=state, iteration=iteration),
+            output_type=SummaryOutput,
+            metadata={
+                "agent_flow_run_id": state.run_id,
+                "agent_flow_stage": "summary",
+            },
+        )
+
+    def _render_user_prompt(
+        self,
+        *,
+        state: AgentFlowState,
+        iteration: AgentFlowIteration,
+    ) -> str:
+        serialized_results = (
+            "\n\n".join(
+                (
+                    f"Subagent: {result.name}\n"
+                    f"Status: {result.status}\n"
+                    f"Content:\n{result.content}"
+                )
+                for result in iteration.subagent_results.values()
+            )
+            or "No subagent results were available."
+        )
+        return (
+            f"User query:\n{state.user_query}\n\n"
+            f"Iteration: {iteration.iteration}\n\n"
+            f"Subagent results:\n{serialized_results}"
         )
