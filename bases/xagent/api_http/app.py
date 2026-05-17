@@ -4,6 +4,9 @@ from langchain_openai import ChatOpenAI
 from openai import AuthenticationError
 from pydantic import BaseModel, Field, SecretStr
 
+from xagent.agent_flow.config import AgentFlowAppConfig
+from xagent.agent_flow.service import AgentFlowService
+from xagent.api_http.routes_agent_flow import create_agent_flow_router
 from xagent.config import StrictConfigModel
 from xagent.langchain_agents.app import LangChainMultiAgentApp
 from xagent.langchain_agents.corpus import build_sample_documents
@@ -32,6 +35,7 @@ class FastAPIConfig(StrictConfigModel):
 
 class ApiHttpConfig(StrictConfigModel):
     fastapi: FastAPIConfig = FastAPIConfig()
+    agent_flow: AgentFlowAppConfig = AgentFlowAppConfig()
     host: str = "0.0.0.0"
     port: int = 8000
     reload: bool = False
@@ -111,6 +115,9 @@ def create_app(config: ApiHttpConfig | None = None) -> FastAPI:
             ],
         )
 
+    app.include_router(
+        create_agent_flow_router(AgentFlowService.in_memory(config.agent_flow))
+    )
     return app
 
 
