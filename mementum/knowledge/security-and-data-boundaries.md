@@ -17,8 +17,8 @@ Capture repository-visible data handling rules that affect implementation and de
 
 - Never commit secrets, credentials, API keys, private keys, production data, customer data, private user data, raw sensitive logs, runtime records, or large generated artifacts.
 - `mementum/` is safe-to-commit engineering context only.
-- Runtime config supports YAML config files, env-style files, and environment variables. Environment variables are filtered by top-level config field names before being loaded.
-- Nested config environment keys use double underscores, for example `OPENAI__API_KEY` maps to `openai.api_key`.
+- Runtime config supports YAML config files and env-style files, but environment-variable overrides are now explicit: only fields annotated with `json_schema_extra={"secret": True, "env_var": "..."}` are eligible.
+- Provider API keys are hydrated during config construction from provider-specific config subclasses and then passed through as `SecretStr` values.
 - The Helm chart separates non-secret `appConfig` from credentials. Non-secret app config is rendered into a ConfigMap; credentials are injected from a Kubernetes Secret via `envFrom`.
 - For shared/dev/prod clusters, docs recommend External Secrets Operator backed by a secret manager rather than committing production keys in Helm values.
 - Local `kind` testing can use chart-managed secret creation with `secret.create=true`; this is documented as disposable local use.
@@ -28,8 +28,9 @@ Capture repository-visible data handling rules that affect implementation and de
 
 - `AGENTS.md`
 - `mementum/knowledge/project-memory-policy.md`
-- `components/xagent/config.py`
-- `components/xagent/runtime_config.py`
+- `components/xagent/config/loader.py`
+- `components/xagent/config/runtime.py`
+- `components/xagent/llm_config/settings.py`
 - `projects/langchain_service/README.md`
 - `deploy/langchain-service/values.yaml`
 - `deploy/langchain-service/templates/configmap.yaml`
