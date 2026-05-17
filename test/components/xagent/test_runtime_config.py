@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from pydantic import Field
+from pytest import MonkeyPatch
 
 from xagent.config import StrictConfigModel
 from xagent.runtime_config import extract_config_file_args, load_runtime_config
@@ -22,7 +23,7 @@ class SampleRuntimeConfig(StrictConfigModel):
     openai_model: str = "gpt-4.1-mini"
 
 
-def test_extract_config_file_args_preserves_mixed_file_order():
+def test_extract_config_file_args_preserves_mixed_file_order() -> None:
     input_files, remaining_args = extract_config_file_args(
         [
             "--config",
@@ -39,19 +40,19 @@ def test_extract_config_file_args_preserves_mixed_file_order():
     assert remaining_args == ["query text", "--show-plan"]
 
 
-def test_extract_config_file_args_rejects_non_yaml_config_paths():
+def test_extract_config_file_args_rejects_non_yaml_config_paths() -> None:
     with pytest.raises(argparse.ArgumentTypeError, match=r"\-\-config expects"):
         extract_config_file_args(["--config", "config.env"])
 
 
-def test_extract_config_file_args_rejects_yaml_env_paths():
+def test_extract_config_file_args_rejects_yaml_env_paths() -> None:
     with pytest.raises(argparse.ArgumentTypeError, match=r"\-\-env does not accept"):
         extract_config_file_args(["--env", "config.yaml"])
 
 
 def test_load_runtime_config_uses_os_environ_with_highest_precedence(
-    monkeypatch, tmp_path: Path
-):
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     yaml_file = tmp_path / "config.yaml"
     yaml_file.write_text(
         "\n".join(

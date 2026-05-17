@@ -27,7 +27,7 @@ class AppConfig(StrictConfigModel):
 
 def test_load_typed_config_merges_files_with_later_file_precedence_and_env_map_wins(
     tmp_path: Path,
-):
+) -> None:
     first_yaml = tmp_path / "base.yaml"
     first_yaml.write_text(
         "\n".join(
@@ -67,7 +67,9 @@ def test_load_typed_config_merges_files_with_later_file_precedence_and_env_map_w
     assert config.fastapi.cors.allow_origins == ["https://override.example.com"]
 
 
-def test_load_typed_config_treats_yaml_extension_case_insensitively(tmp_path: Path):
+def test_load_typed_config_treats_yaml_extension_case_insensitively(
+    tmp_path: Path,
+) -> None:
     yaml_file = tmp_path / "CONFIG.YML"
     yaml_file.write_text(
         "\n".join(
@@ -84,7 +86,7 @@ def test_load_typed_config_treats_yaml_extension_case_insensitively(tmp_path: Pa
     assert config.uvicorn.port == 8500
 
 
-def test_load_typed_config_rejects_extra_fields(tmp_path: Path):
+def test_load_typed_config_rejects_extra_fields(tmp_path: Path) -> None:
     yaml_file = tmp_path / "config.yaml"
     yaml_file.write_text(
         "\n".join(
@@ -102,7 +104,7 @@ def test_load_typed_config_rejects_extra_fields(tmp_path: Path):
         load_typed_config(AppConfig, env_map=None, input_files=[yaml_file])
 
 
-def test_load_typed_config_applies_type_conversion(tmp_path: Path):
+def test_load_typed_config_applies_type_conversion(tmp_path: Path) -> None:
     env_file = tmp_path / "config.env"
     env_file.write_text(
         "\n".join(
@@ -120,7 +122,9 @@ def test_load_typed_config_applies_type_conversion(tmp_path: Path):
     assert config.uvicorn.reload is True
 
 
-def test_load_typed_config_rejects_invalid_yaml_key_names(tmp_path: Path):
+def test_load_typed_config_rejects_invalid_yaml_key_names(
+    tmp_path: Path,
+) -> None:
     yaml_file = tmp_path / "config.yaml"
     yaml_file.write_text(
         "\n".join(
@@ -136,7 +140,7 @@ def test_load_typed_config_rejects_invalid_yaml_key_names(tmp_path: Path):
         load_typed_config(AppConfig, env_map=None, input_files=[yaml_file])
 
 
-def test_load_typed_config_rejects_invalid_model_field_names():
+def test_load_typed_config_rejects_invalid_model_field_names() -> None:
     class InvalidConfig(StrictConfigModel):
         bad_name_: str = "oops"
 
@@ -144,7 +148,9 @@ def test_load_typed_config_rejects_invalid_model_field_names():
         load_typed_config(InvalidConfig, env_map=None, input_files=[])
 
 
-def test_load_typed_config_rejects_case_insensitive_yaml_key_conflicts(tmp_path: Path):
+def test_load_typed_config_rejects_case_insensitive_yaml_key_conflicts(
+    tmp_path: Path,
+) -> None:
     yaml_file = tmp_path / "config.yaml"
     yaml_file.write_text(
         "\n".join(
@@ -162,7 +168,7 @@ def test_load_typed_config_rejects_case_insensitive_yaml_key_conflicts(tmp_path:
         load_typed_config(AppConfig, env_map=None, input_files=[yaml_file])
 
 
-def test_load_typed_config_rejects_case_insensitive_model_field_conflicts():
+def test_load_typed_config_rejects_case_insensitive_model_field_conflicts() -> None:
     class InvalidConfig(StrictConfigModel):
         foo: str = "a"
         FOO: str = "b"
