@@ -17,7 +17,8 @@ Capture repository-visible data handling rules that affect implementation and de
 
 - Never commit secrets, credentials, API keys, private keys, production data, customer data, private user data, raw sensitive logs, runtime records, or large generated artifacts.
 - `mementum/` is safe-to-commit engineering context only.
-- Runtime config supports YAML config files and env-style files, but environment-variable overrides are now explicit: only fields annotated with `json_schema_extra={"secret": True, "env_var": "..."}` are eligible.
+- Runtime config supports YAML config files and env-style files, but environment-variable overrides are now explicit: only fields annotated with `json_schema_extra={"secret": True, "env_var": "..."}` are eligible, and the env var name must match that metadata exactly.
+- The loader does not infer env var names from nested field paths; the nested config path is only the destination used after an explicit env-var match.
 - Provider API keys are hydrated during config construction from provider-specific config subclasses and then passed through as `SecretStr` values.
 - The Helm chart separates non-secret `appConfig` from credentials. Non-secret app config is rendered into a ConfigMap; credentials are injected from a Kubernetes Secret via `envFrom`.
 - For shared/dev/prod clusters, docs recommend External Secrets Operator backed by a secret manager rather than committing production keys in Helm values.

@@ -92,7 +92,7 @@ ln -s ../../skills/mementum-memory .claude/skills/mementum-memory
 ## Workflow Notes
 
 - The default pytest configuration excludes `require_env`, so normal test runs should not call real providers.
-- Runtime config accepts `--config` for YAML files and `--env` for env-style files; explicit field metadata controls which environment variables are eligible to override config values.
+- Runtime config accepts `--config` for YAML files and `--env` for env-style files; explicit field metadata controls which environment variables are eligible to override config values, and the env var name must match the field metadata exactly.
 - Provider API key env binding belongs on provider-specific config models, not in provider clients or factories.
 - Helm deploys render non-secret `appConfig` into a ConfigMap and inject secrets through `envFrom`.
 - The `kind` smoke-test script requires Docker, kind, kubectl, helm, curl, and `OPENAI_API_KEY`.

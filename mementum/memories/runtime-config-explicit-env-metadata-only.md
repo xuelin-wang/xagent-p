@@ -8,6 +8,7 @@ Why it matters:
 - Keeps env overrides intentional instead of inferring them from top-level field names.
 - Prevents accidental config injection from unrelated environment variables.
 - Makes the override contract visible in the config model itself.
+- The config path is just the write target after an exact env-var match; it is not part of env-var naming.
 
 Source pointers:
 - `components/xagent/config/loader.py`
