@@ -31,6 +31,13 @@ uv run --active ruff format --check .
 uv run --active mypy components bases
 ```
 
+Auto-fix lint and format:
+
+```bash
+uv run --active ruff check --fix .
+uv run --active ruff format .
+```
+
 Run tests:
 
 ```bash
