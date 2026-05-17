@@ -2,7 +2,13 @@ import json
 from datetime import datetime
 from typing import Any
 
-from xagent.llm_batch import BatchCreateRequest, BatchJob, BatchResultItem, BatchResults, BatchStatus
+from xagent.llm_batch import (
+    BatchCreateRequest,
+    BatchJob,
+    BatchResultItem,
+    BatchResults,
+    BatchStatus,
+)
 from xagent.llm_contracts import GenerateRequest, LLMErrorPayload
 from xagent.llm_provider_anthropic.mapping import (
     request_to_anthropic_messages_payload,

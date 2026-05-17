@@ -3,8 +3,7 @@ import sys
 
 import uvicorn
 
-from xagent.api_http.app import ApiHttpConfig
-from xagent.api_http.app import create_app
+from xagent.api_http.app import ApiHttpConfig, create_app
 from xagent.runtime_config import load_runtime_config
 
 

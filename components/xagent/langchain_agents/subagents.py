@@ -1,7 +1,5 @@
-from dataclasses import dataclass
-from dataclasses import field
-from typing import Any
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage

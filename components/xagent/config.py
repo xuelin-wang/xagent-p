@@ -1,14 +1,9 @@
 import json
 from pathlib import Path
-from typing import Any
-from typing import TypeVar
-from typing import get_args
-from typing import get_origin
+from typing import Any, TypeVar, get_args, get_origin
 
 import yaml
-from pydantic import BaseModel
-from pydantic import ConfigDict
-
+from pydantic import BaseModel, ConfigDict
 
 ConfigType = TypeVar("ConfigType", bound="StrictConfigModel")
 
@@ -28,7 +23,7 @@ def _validate_config_key_name(name: str) -> None:
         )
 
 
-def _iter_nested_model_types(annotation: Any) -> list[type["StrictConfigModel"]]:
+def _iter_nested_model_types(annotation: Any) -> list[type[StrictConfigModel]]:
     if isinstance(annotation, type) and issubclass(annotation, StrictConfigModel):
         return [annotation]
 
@@ -42,7 +37,7 @@ def _iter_nested_model_types(annotation: Any) -> list[type["StrictConfigModel"]]
     return nested
 
 
-def validate_model_key_names(model_type: type["StrictConfigModel"]) -> None:
+def validate_model_key_names(model_type: type[StrictConfigModel]) -> None:
     visited: set[type[StrictConfigModel]] = set()
 
     def _walk(current_model: type[StrictConfigModel]) -> None:

@@ -1,11 +1,11 @@
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 from xagent.llm_contracts.errors import LLMErrorPayload, UnsupportedCapabilityError
 
 
-class Capability(str, Enum):
+class Capability(StrEnum):
     TEXT_GENERATION = "text_generation"
     STRUCTURED_OUTPUT = "structured_output"
     APP_TOOL_CALLS = "app_tool_calls"

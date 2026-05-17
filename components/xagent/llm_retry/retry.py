@@ -1,8 +1,8 @@
-import email.utils
 import asyncio
+import email.utils
 import random
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TypeVar
 
 from xagent.llm_config import RetryConfig
@@ -29,8 +29,8 @@ def parse_retry_after(value: str | None, *, now: datetime | None = None) -> floa
         pass
     parsed = email.utils.parsedate_to_datetime(stripped)
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    current = now or datetime.now(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    current = now or datetime.now(UTC)
     return max((parsed - current).total_seconds(), 0.0)
 
 

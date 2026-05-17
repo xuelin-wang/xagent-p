@@ -2,14 +2,14 @@ import argparse
 from pathlib import Path
 
 import pytest
+from pydantic import Field
 
 from xagent.config import StrictConfigModel
-from xagent.runtime_config import extract_config_file_args
-from xagent.runtime_config import load_runtime_config
+from xagent.runtime_config import extract_config_file_args, load_runtime_config
 
 
 class SampleCorsConfig(StrictConfigModel):
-    allow_origins: list[str] = []
+    allow_origins: list[str] = Field(default_factory=list)
 
 
 class SampleFastAPIConfig(StrictConfigModel):

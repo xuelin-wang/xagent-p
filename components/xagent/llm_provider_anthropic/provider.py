@@ -36,19 +36,31 @@ from xagent.llm_files import (
     UploadedFile,
     read_upload_bytes,
 )
-from xagent.llm_provider_anthropic.mapping import (
-    ANTHROPIC_PROVIDER_TOOL_TYPES,
-    request_to_anthropic_messages_payload,
-    response_from_anthropic_message,
-)
 from xagent.llm_provider_anthropic.batch import (
     batch_job_from_anthropic,
     batch_results_from_anthropic_jsonl,
     request_to_anthropic_batch_payload,
 )
-from xagent.llm_provider_anthropic.files import ANTHROPIC_FILES_BETA, anthropic_files_beta_header
-from xagent.llm_retry import is_retryable_status, parse_retry_after, retry_async, to_httpx_timeout
-from xagent.llm_structured import StructuredGenerateRequest, StructuredGenerateResponse, validate_structured_output
+from xagent.llm_provider_anthropic.files import (
+    ANTHROPIC_FILES_BETA,
+    anthropic_files_beta_header,
+)
+from xagent.llm_provider_anthropic.mapping import (
+    ANTHROPIC_PROVIDER_TOOL_TYPES,
+    request_to_anthropic_messages_payload,
+    response_from_anthropic_message,
+)
+from xagent.llm_retry import (
+    is_retryable_status,
+    parse_retry_after,
+    retry_async,
+    to_httpx_timeout,
+)
+from xagent.llm_structured import (
+    StructuredGenerateRequest,
+    StructuredGenerateResponse,
+    validate_structured_output,
+)
 from xagent.llm_tools import AppToolDefinition, ToolChoice
 
 T = TypeVar("T")
@@ -199,7 +211,7 @@ class AnthropicProvider:
         request: StructuredGenerateRequest,
         output_type: type[T],
     ) -> StructuredGenerateResponse[T]:
-        model = self._check_generate_capabilities(request)
+        self._check_generate_capabilities(request)
         self._ensure_supported_generate_fields(request, allow_response_format=True)
         extraction_tool = _structured_output_tool(request, output_type)
         current = request.model_copy(

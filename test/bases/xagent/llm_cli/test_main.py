@@ -4,12 +4,18 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from xagent.llm_batch import BatchJob, BatchResults, BatchStatus, EmbeddingResponse, EmbeddingVector
+from xagent.llm_batch import (
+    BatchJob,
+    BatchResults,
+    BatchStatus,
+    EmbeddingResponse,
+    EmbeddingVector,
+)
+from xagent.llm_cli.main import _structured_output_type, build_parser, run
 from xagent.llm_config import ProviderConfig
 from xagent.llm_contracts import GenerateResponse
 from xagent.llm_files import FilePurpose, UploadedFile
 from xagent.llm_structured import StructuredGenerateResponse
-from xagent.llm_cli.main import _structured_output_type, build_parser, run
 
 
 class FakeFactory:
@@ -17,7 +23,7 @@ class FakeFactory:
         self.config: ProviderConfig | None = None
         self.provider = FakeProvider()
 
-    def create(self, config: ProviderConfig) -> "FakeProvider":
+    def create(self, config: ProviderConfig) -> FakeProvider:
         self.config = config
         return self.provider
 

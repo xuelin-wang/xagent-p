@@ -1,5 +1,5 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
@@ -44,7 +44,7 @@ FileSource = Annotated[
 ]
 
 
-class FilePurpose(str, Enum):
+class FilePurpose(StrEnum):
     PROMPT_INPUT = "prompt_input"
     PROVIDER_FILE_SEARCH = "provider_file_search"
     BATCH_INPUT = "batch_input"

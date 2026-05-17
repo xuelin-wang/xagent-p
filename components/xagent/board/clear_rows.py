@@ -1,5 +1,6 @@
 from xagent.board.core import empty_board
 
+
 def is_incomplete(row):
     return 0 in row
 

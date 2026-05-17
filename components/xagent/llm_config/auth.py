@@ -4,7 +4,6 @@ from pydantic import SecretStr
 
 from xagent.llm_config.settings import ProviderConfig
 
-
 DEFAULT_API_KEY_ENV = {
     "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",

@@ -54,4 +54,3 @@ Context:
 
 Source pointers:
 - `README.md`
-- `changelogs/20250509-llm-api-layer-design.txt`

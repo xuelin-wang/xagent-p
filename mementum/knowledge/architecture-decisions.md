@@ -12,7 +12,7 @@ related:
 
 ## Purpose
 
-Keep only decisions with continuing design value. Detailed commit summaries remain in changelogs.
+Keep only decisions with continuing design value.
 
 ## Decisions
 
@@ -32,8 +32,6 @@ Implications:
 - Do not silently emulate a provider feature with another provider or fallback.
 
 Source pointers:
-- `changelogs/20250509-llm-api-layer-design.txt`
-- `changelogs/20250509-llm-api-layer-changes.md`
 - `components/xagent/llm_contracts/`
 - `components/xagent/llm_provider_openai/`
 - `components/xagent/llm_provider_anthropic/`
@@ -55,7 +53,6 @@ Implications:
 Source pointers:
 - `workspace.toml`
 - `pyproject.toml`
-- `changelogs/20250509-llm-api-layer-design.txt`
 
 ## 2025-05-09 - Do Not Retry Provider Resource Mutations Automatically
 
@@ -72,7 +69,6 @@ Implications:
 - Tests should protect this behavior.
 
 Source pointers:
-- `changelogs/20250509-llm-api-layer-changes.md`
 - `components/xagent/llm_provider_openai/provider.py`
 - `components/xagent/llm_provider_anthropic/provider.py`
 - `test/components/xagent/llm_provider_openai/test_files.py`
@@ -93,7 +89,6 @@ Implications:
 - Keep batch API narrow until a cross-provider design exists.
 
 Source pointers:
-- `changelogs/20250509-llm-api-layer-changes.md`
 - `components/xagent/llm_batch/models.py`
 - `test/components/xagent/llm_batch/test_models.py`
 

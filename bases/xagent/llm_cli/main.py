@@ -5,7 +5,8 @@ import sys
 from pathlib import Path
 from typing import Any, ClassVar, TextIO
 
-from jsonschema import Draft202012Validator, SchemaError, ValidationError as JsonSchemaValidationError
+from jsonschema import Draft202012Validator, SchemaError
+from jsonschema import ValidationError as JsonSchemaValidationError
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from xagent.llm_batch import BatchCreateRequest, BatchRequestItem, EmbeddingRequest
@@ -13,7 +14,11 @@ from xagent.llm_config import DEFAULT_API_KEY_ENV, ProviderConfig
 from xagent.llm_contracts import GenerateRequest, Message, Role
 from xagent.llm_files import FilePurpose, FileUploadRequest, LocalFileSource
 from xagent.llm_registry import LLMClientFactory
-from xagent.llm_structured import ResponseFormat, ResponseFormatType, StructuredGenerateRequest
+from xagent.llm_structured import (
+    ResponseFormat,
+    ResponseFormatType,
+    StructuredGenerateRequest,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -151,7 +156,7 @@ class JsonSchemaStructuredOutput(BaseModel):
     _schema_validator: ClassVar[Draft202012Validator]
 
     @model_validator(mode="after")
-    def _validate_json_schema(self) -> "JsonSchemaStructuredOutput":
+    def _validate_json_schema(self) -> JsonSchemaStructuredOutput:
         try:
             self._schema_validator.validate(self.model_dump(mode="json"))
         except JsonSchemaValidationError as exc:

@@ -11,7 +11,6 @@ Why it matters:
 Source pointers:
 - `workspace.toml`
 - `pyproject.toml`
-- `changelogs/20250509-llm-api-layer-design.txt`
 
 Future implication:
 - Add reusable implementation under `components/xagent/` and executable entry points under `bases/xagent/` unless the architecture is intentionally changed.

@@ -3,10 +3,20 @@ import asyncio
 import pytest
 from pydantic import BaseModel
 
-from xagent.llm_batch import BatchCreateRequest, BatchRequestItem, BatchStatus, EmbeddingRequest
+from xagent.llm_batch import (
+    BatchCreateRequest,
+    BatchRequestItem,
+    BatchStatus,
+    EmbeddingRequest,
+)
 from xagent.llm_config import ProviderConfig
 from xagent.llm_contracts import GenerateRequest, Message, Role
-from xagent.llm_files import BytesFileSource, FileDeleteRequest, FilePurpose, FileUploadRequest
+from xagent.llm_files import (
+    BytesFileSource,
+    FileDeleteRequest,
+    FilePurpose,
+    FileUploadRequest,
+)
 from xagent.llm_provider_openai import OpenAIProvider
 from xagent.llm_structured import StructuredGenerateRequest, response_format_for_model
 from xagent.llm_tools import AppToolDefinition, ToolChoice

@@ -1,10 +1,9 @@
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
-from xagent.config import StrictConfigModel
-from xagent.config import load_typed_config
+from xagent.config import StrictConfigModel, load_typed_config
 
 
 class UvicornConfig(StrictConfigModel):
@@ -14,7 +13,7 @@ class UvicornConfig(StrictConfigModel):
 
 
 class CorsConfig(StrictConfigModel):
-    allow_origins: list[str] = []
+    allow_origins: list[str] = Field(default_factory=list)
 
 
 class FastAPIConfig(StrictConfigModel):

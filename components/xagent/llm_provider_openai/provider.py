@@ -36,10 +36,6 @@ from xagent.llm_files import (
     UploadedFile,
     read_upload_bytes,
 )
-from xagent.llm_provider_openai.mapping import (
-    request_to_openai_responses_payload,
-    response_from_openai_responses,
-)
 from xagent.llm_provider_openai.batch import (
     OPENAI_BATCH_COMPLETION_WINDOW,
     batch_job_from_openai,
@@ -53,7 +49,16 @@ from xagent.llm_provider_openai.embeddings import (
     response_from_openai_embeddings,
 )
 from xagent.llm_provider_openai.files import openai_file_purpose
-from xagent.llm_retry import is_retryable_status, parse_retry_after, retry_async, to_httpx_timeout
+from xagent.llm_provider_openai.mapping import (
+    request_to_openai_responses_payload,
+    response_from_openai_responses,
+)
+from xagent.llm_retry import (
+    is_retryable_status,
+    parse_retry_after,
+    retry_async,
+    to_httpx_timeout,
+)
 from xagent.llm_structured import (
     StructuredGenerateRequest,
     StructuredGenerateResponse,

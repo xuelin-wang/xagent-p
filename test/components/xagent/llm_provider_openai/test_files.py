@@ -5,7 +5,12 @@ import pytest
 
 from xagent.llm_config import ProviderConfig, RetryConfig
 from xagent.llm_contracts import ProviderServerError
-from xagent.llm_files import BytesFileSource, FileDeleteRequest, FilePurpose, FileUploadRequest
+from xagent.llm_files import (
+    BytesFileSource,
+    FileDeleteRequest,
+    FilePurpose,
+    FileUploadRequest,
+)
 from xagent.llm_provider_openai import OpenAIProvider
 from xagent.llm_provider_openai.files import openai_file_purpose
 

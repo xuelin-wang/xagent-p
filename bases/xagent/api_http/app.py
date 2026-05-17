@@ -1,16 +1,15 @@
-from fastapi import FastAPI
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from openai import AuthenticationError
+from pydantic import BaseModel, Field
 
+from xagent.config import StrictConfigModel
 from xagent.langchain_agents.app import LangChainMultiAgentApp
 from xagent.langchain_agents.corpus import build_sample_documents
 from xagent.langchain_agents.merge import LangChainResponseMerger
 from xagent.langchain_agents.planner import LangChainPlanner
 from xagent.langchain_agents.subagents import RAGSubagent
-from xagent.config import StrictConfigModel
 from xagent.runtime_config import load_runtime_config
 
 
@@ -24,7 +23,7 @@ class QueryResponse(BaseModel):
 
 
 class CorsConfig(StrictConfigModel):
-    allow_origins: list[str] = []
+    allow_origins: list[str] = Field(default_factory=list)
 
 
 class FastAPIConfig(StrictConfigModel):

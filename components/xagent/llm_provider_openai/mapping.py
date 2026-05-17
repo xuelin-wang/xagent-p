@@ -13,7 +13,14 @@ from xagent.llm_files import (
     UrlFileSource,
 )
 from xagent.llm_structured import ResponseFormat, ResponseFormatType
-from xagent.llm_tools import AppToolCall, AppToolDefinition, Citation, ProviderHostedTool, ProviderToolTrace, ToolChoice
+from xagent.llm_tools import (
+    AppToolCall,
+    AppToolDefinition,
+    Citation,
+    ProviderHostedTool,
+    ProviderToolTrace,
+    ToolChoice,
+)
 
 
 def message_to_openai_input(message: Message) -> dict[str, Any]:

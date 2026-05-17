@@ -1,4 +1,8 @@
-from xagent.llm_contracts.capabilities import Capability, ModelCapabilities, assert_capability
+from xagent.llm_contracts.capabilities import (
+    Capability,
+    ModelCapabilities,
+    assert_capability,
+)
 from xagent.llm_contracts.errors import (
     AppToolCallValidationError,
     AuthenticationError,
@@ -15,7 +19,13 @@ from xagent.llm_contracts.errors import (
     ToolLoopExceededError,
     UnsupportedCapabilityError,
 )
-from xagent.llm_contracts.types import GenerateRequest, GenerateResponse, Message, Role, TextPart
+from xagent.llm_contracts.types import (
+    GenerateRequest,
+    GenerateResponse,
+    Message,
+    Role,
+    TextPart,
+)
 from xagent.llm_contracts.usage import Usage
 
 __all__ = [

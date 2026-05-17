@@ -64,7 +64,6 @@ OPENAI_API_KEY=... scripts/test-kind-langchain-service.sh
 - `test/integration/test_openai_live.py`
 - `test/integration/test_anthropic_live.py`
 - `scripts/test-kind-langchain-service.sh`
-- `changelogs/20250509-llm-api-layer-changes.md`
 
 ## Notes for Future Agents
 

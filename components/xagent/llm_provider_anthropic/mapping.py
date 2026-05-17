@@ -11,7 +11,14 @@ from xagent.llm_files import (
     ProviderFileRef,
     UrlFileSource,
 )
-from xagent.llm_tools import AppToolCall, AppToolDefinition, Citation, ProviderHostedTool, ProviderToolTrace, ToolChoice
+from xagent.llm_tools import (
+    AppToolCall,
+    AppToolDefinition,
+    Citation,
+    ProviderHostedTool,
+    ProviderToolTrace,
+    ToolChoice,
+)
 
 ANTHROPIC_PROVIDER_TOOL_TYPES = {
     "web_search",

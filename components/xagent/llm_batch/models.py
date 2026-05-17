@@ -1,5 +1,5 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -55,7 +55,7 @@ class BatchCreateRequest(BaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
-class BatchStatus(str, Enum):
+class BatchStatus(StrEnum):
     VALIDATING = "validating"
     QUEUED = "queued"
     RUNNING = "running"

@@ -5,7 +5,6 @@ from xagent.llm_config import ProviderConfig
 from xagent.llm_registry.provider_protocol import LLMProvider
 from xagent.llm_registry.registry import ProviderRegistry
 
-
 DEFAULT_MODELS = {
     "openai": "gpt-5.5",
     "anthropic": "claude-sonnet-4-6",

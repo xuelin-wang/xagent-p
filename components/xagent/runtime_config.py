@@ -1,12 +1,10 @@
 import argparse
 import os
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 from typing import TypeVar
 
-from xagent.config import StrictConfigModel
-from xagent.config import load_typed_config
-
+from xagent.config import StrictConfigModel, load_typed_config
 
 ConfigType = TypeVar("ConfigType", bound=StrictConfigModel)
 

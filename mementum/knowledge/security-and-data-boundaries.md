@@ -36,7 +36,6 @@ Capture repository-visible data handling rules that affect implementation and de
 - `deploy/langchain-service/templates/deployment.yaml`
 - `deploy/langchain-service/templates/secret.yaml`
 - `deploy/langchain-service/templates/externalsecret.yaml`
-- `changelogs/20250509-llm-api-layer-design.txt`
 
 ## Notes for Future Agents
 

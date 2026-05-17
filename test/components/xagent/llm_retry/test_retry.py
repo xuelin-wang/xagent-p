@@ -1,8 +1,13 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from random import Random
 
 from xagent.llm_config import RetryConfig
-from xagent.llm_retry import backoff_delay, is_retryable_status, parse_retry_after, retry_async
+from xagent.llm_retry import (
+    backoff_delay,
+    is_retryable_status,
+    parse_retry_after,
+    retry_async,
+)
 
 
 def test_retryable_status_classifier() -> None:
@@ -17,7 +22,7 @@ def test_parse_retry_after_seconds() -> None:
 
 
 def test_parse_retry_after_http_date() -> None:
-    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 1, tzinfo=UTC)
 
     assert parse_retry_after("Thu, 01 Jan 2026 00:00:05 GMT", now=now) == 5.0
 

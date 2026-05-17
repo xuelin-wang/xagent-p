@@ -15,7 +15,10 @@ from xagent.llm_files import (
     ProviderFileRef,
 )
 from xagent.llm_provider_anthropic import AnthropicProvider
-from xagent.llm_provider_anthropic.files import ANTHROPIC_FILES_BETA, anthropic_files_beta_header
+from xagent.llm_provider_anthropic.files import (
+    ANTHROPIC_FILES_BETA,
+    anthropic_files_beta_header,
+)
 
 
 def test_anthropic_files_beta_header() -> None:

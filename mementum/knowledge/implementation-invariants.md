@@ -37,8 +37,6 @@ Record rules that should remain true unless an explicit design change updates co
 - `components/xagent/llm_provider_openai/provider.py`
 - `components/xagent/llm_provider_anthropic/provider.py`
 - `components/xagent/config.py`
-- `changelogs/20250509-llm-api-layer-design.txt`
-- `changelogs/20250509-llm-api-layer-changes.md`
 - `test/components/xagent/llm_provider_openai/`
 - `test/components/xagent/llm_provider_anthropic/`
 

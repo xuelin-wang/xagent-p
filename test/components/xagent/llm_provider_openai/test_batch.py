@@ -4,7 +4,12 @@ import json
 import httpx
 import pytest
 
-from xagent.llm_batch import BatchCreateRequest, BatchRequestItem, BatchStatus, EmbeddingRequest
+from xagent.llm_batch import (
+    BatchCreateRequest,
+    BatchRequestItem,
+    BatchStatus,
+    EmbeddingRequest,
+)
 from xagent.llm_config import ProviderConfig, RetryConfig
 from xagent.llm_contracts import GenerateRequest, Message, ProviderServerError, Role
 from xagent.llm_provider_openai import OpenAIProvider

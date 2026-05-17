@@ -9,7 +9,6 @@ Why it matters:
 - Retrying deletes can leave ambiguous state.
 
 Source pointers:
-- `changelogs/20250509-llm-api-layer-changes.md`
 - `components/xagent/llm_provider_openai/provider.py`
 - `components/xagent/llm_provider_anthropic/provider.py`
 

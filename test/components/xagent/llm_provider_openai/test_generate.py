@@ -16,7 +16,12 @@ from xagent.llm_contracts import (
 )
 from xagent.llm_provider_openai import OpenAIProvider
 from xagent.llm_structured import StructuredGenerateRequest, response_format_for_model
-from xagent.llm_tools import AppToolDefinition, ProviderHostedTool, ToolChoice, run_app_tool_loop
+from xagent.llm_tools import (
+    AppToolDefinition,
+    ProviderHostedTool,
+    ToolChoice,
+    run_app_tool_loop,
+)
 
 
 class SampleOutput(BaseModel):

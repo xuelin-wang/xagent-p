@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
@@ -8,7 +8,7 @@ from xagent.llm_contracts import GenerateRequest, Usage
 T = TypeVar("T")
 
 
-class ResponseFormatType(str, Enum):
+class ResponseFormatType(StrEnum):
     TEXT = "text"
     JSON_OBJECT = "json_object"
     JSON_SCHEMA = "json_schema"
