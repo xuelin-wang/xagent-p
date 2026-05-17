@@ -92,7 +92,8 @@ ln -s ../../skills/mementum-memory .claude/skills/mementum-memory
 ## Workflow Notes
 
 - The default pytest configuration excludes `require_env`, so normal test runs should not call real providers.
-- Runtime config accepts `--config` for YAML files and `--env` for env-style files; environment variables matching top-level config fields override file settings.
+- Runtime config accepts `--config` for YAML files and `--env` for env-style files; explicit field metadata controls which environment variables are eligible to override config values.
+- Provider API key env binding belongs on provider-specific config models, not in provider clients or factories.
 - Helm deploys render non-secret `appConfig` into a ConfigMap and inject secrets through `envFrom`.
 - The `kind` smoke-test script requires Docker, kind, kubectl, helm, curl, and `OPENAI_API_KEY`.
 - Repo-local skill sources live under `skills/`; agent-specific discovery folders should symlink to them rather than copying skill files.
@@ -101,8 +102,9 @@ ln -s ../../skills/mementum-memory .claude/skills/mementum-memory
 
 - `pyproject.toml`
 - `workspace.toml`
-- `components/xagent/runtime_config.py`
-- `components/xagent/config.py`
+- `components/xagent/config/runtime.py`
+- `components/xagent/config/loader.py`
+- `components/xagent/llm_config/settings.py`
 - `projects/langchain_service/README.md`
 - `projects/langchain_service/Dockerfile`
 - `scripts/test-kind-langchain-service.sh`

@@ -216,13 +216,13 @@ components/xagent/agent_flow/models.py
 
 Do not overload agent_app/model.py with persistence/runtime concerns.
 
-5.3 Reuse components/xagent/config.py
+5.3 Reuse components/xagent/config/
 
 The repo already has a strict config model helper based on Pydantic, with StrictConfigModel using extra="forbid".
 
 The new runtime config should extend this instead of creating another unrelated config base class.
 
-5.4 Reuse components/xagent/runtime_config.py
+5.4 Reuse components/xagent/config/runtime.py
 
 The repo already has helpers for extracting --config and --env arguments, validating YAML config paths, and loading typed config.
 

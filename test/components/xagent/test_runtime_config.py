@@ -2,7 +2,8 @@ import argparse
 from pathlib import Path
 
 import pytest
-from pydantic import Field
+from pydantic import Field, SecretStr
+from pytest import MonkeyPatch
 
 from xagent.config import StrictConfigModel
 from xagent.runtime_config import extract_config_file_args, load_runtime_config
@@ -17,12 +18,15 @@ class SampleFastAPIConfig(StrictConfigModel):
 
 
 class SampleRuntimeConfig(StrictConfigModel):
-    fastapi: SampleFastAPIConfig = SampleFastAPIConfig()
     port: int = 8000
-    openai_model: str = "gpt-4.1-mini"
+    fastapi: SampleFastAPIConfig = SampleFastAPIConfig()
+    openai_api_key: SecretStr | None = Field(
+        default=None,
+        json_schema_extra={"secret": True, "env_var": "OPENAI_API_KEY"},
+    )
 
 
-def test_extract_config_file_args_preserves_mixed_file_order():
+def test_extract_config_file_args_preserves_mixed_file_order() -> None:
     input_files, remaining_args = extract_config_file_args(
         [
             "--config",
@@ -39,19 +43,19 @@ def test_extract_config_file_args_preserves_mixed_file_order():
     assert remaining_args == ["query text", "--show-plan"]
 
 
-def test_extract_config_file_args_rejects_non_yaml_config_paths():
+def test_extract_config_file_args_rejects_non_yaml_config_paths() -> None:
     with pytest.raises(argparse.ArgumentTypeError, match=r"\-\-config expects"):
         extract_config_file_args(["--config", "config.env"])
 
 
-def test_extract_config_file_args_rejects_yaml_env_paths():
+def test_extract_config_file_args_rejects_yaml_env_paths() -> None:
     with pytest.raises(argparse.ArgumentTypeError, match=r"\-\-env does not accept"):
         extract_config_file_args(["--env", "config.yaml"])
 
 
 def test_load_runtime_config_uses_os_environ_with_highest_precedence(
-    monkeypatch, tmp_path: Path
-):
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     yaml_file = tmp_path / "config.yaml"
     yaml_file.write_text(
         "\n".join(
@@ -61,6 +65,7 @@ def test_load_runtime_config_uses_os_environ_with_highest_precedence(
                 "  cors:",
                 "    allow_origins:",
                 "      - https://yaml.example.com",
+                "openai_api_key: yaml-secret",
             ]
         ),
         encoding="utf-8",
@@ -69,15 +74,14 @@ def test_load_runtime_config_uses_os_environ_with_highest_precedence(
     env_file.write_text(
         "\n".join(
             [
-                "PORT=7100",
-                'FASTAPI__CORS__ALLOW_ORIGINS=["https://envfile.example.com"]',
+                "OPENAI_API_KEY=envfile-secret",
+                "UNRELATED_ENV_FILE=ignored",
             ]
         ),
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("PORT", "7200")
-    monkeypatch.setenv("OPENAI_MODEL", "gpt-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "env-secret")
     monkeypatch.setenv("UNRELATED_ENV", "ignored")
 
     config, remaining_args = load_runtime_config(
@@ -86,7 +90,8 @@ def test_load_runtime_config_uses_os_environ_with_highest_precedence(
     )
 
     assert isinstance(config, SampleRuntimeConfig)
-    assert config.port == 7200
-    assert config.openai_model == "gpt-test"
-    assert config.fastapi.cors.allow_origins == ["https://envfile.example.com"]
+    assert config.port == 7000
+    assert config.fastapi.cors.allow_origins == ["https://yaml.example.com"]
+    assert config.openai_api_key is not None
+    assert config.openai_api_key.get_secret_value() == "env-secret"
     assert remaining_args == ["leftover"]

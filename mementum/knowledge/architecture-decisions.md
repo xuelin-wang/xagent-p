@@ -173,3 +173,28 @@ Source pointers:
 - `components/xagent/agent_flow/subagents.py`
 - `components/xagent/agent_flow/summary.py`
 - `components/xagent/agent_persistence/repositories.py`
+
+## 2026-05-17 - Put Provider API Key Binding On Config Models
+
+Status: accepted
+
+Decision:
+- Remove `api_key_env` from provider config objects and bind provider API keys through config-model metadata instead.
+- Use provider-specific config subclasses with `json_schema_extra={"secret": True, "env_var": "..."}` on the `api_key` field.
+- Keep provider clients consuming loaded `SecretStr` values from config rather than reading environment variables directly.
+
+Rationale:
+- API key loading is configuration, not provider behavior.
+- Centralizing env binding in config models keeps provider clients simpler and removes duplicate env lookup paths.
+- The provider default env name should still be validated so config metadata stays aligned with the provider contract.
+
+Implications:
+- Config construction now hydrates provider API keys before clients are built.
+- Downstream code should not rely on `api_key_env` or perform its own provider-env lookup.
+- Provider-specific config subclasses are the supported place for provider default env metadata.
+
+Source pointers:
+- `components/xagent/llm_config/settings.py`
+- `components/xagent/llm_config/auth.py`
+- `components/xagent/llm_registry/factory.py`
+- `bases/xagent/llm_cli/main.py`

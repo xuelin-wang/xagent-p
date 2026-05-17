@@ -1,5 +1,6 @@
 import io
 import json
+from typing import Any, cast
 
 import pytest
 from pydantic import ValidationError
@@ -32,11 +33,13 @@ class FakeProvider:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
 
-    async def generate(self, request):
+    async def generate(self, request: Any) -> GenerateResponse:
         self.calls.append(("generate", request))
         return GenerateResponse(provider="openai", model="gpt-5.5", text="ok")
 
-    async def generate_structured(self, request, output_type):
+    async def generate_structured(
+        self, request: Any, output_type: type[Any]
+    ) -> StructuredGenerateResponse[Any]:
         self.calls.append(("generate_structured", (request, output_type)))
         return StructuredGenerateResponse(
             provider="openai",
@@ -45,7 +48,7 @@ class FakeProvider:
             raw_json={"value": "ok"},
         )
 
-    async def embed(self, request):
+    async def embed(self, request: Any) -> EmbeddingResponse:
         self.calls.append(("embed", request))
         return EmbeddingResponse(
             provider="openai",
@@ -54,25 +57,25 @@ class FakeProvider:
             dimensions=2,
         )
 
-    async def upload_file(self, request):
+    async def upload_file(self, request: Any) -> UploadedFile:
         self.calls.append(("upload_file", request))
         return UploadedFile(
             provider="openai", file_id="file-123", purpose=FilePurpose.PROMPT_INPUT
         )
 
-    async def create_batch(self, request):
+    async def create_batch(self, request: Any) -> BatchJob:
         self.calls.append(("create_batch", request))
         return BatchJob(
             provider="openai", batch_id="batch-123", status=BatchStatus.VALIDATING
         )
 
-    async def get_batch(self, batch_id):
+    async def get_batch(self, batch_id: str) -> BatchJob:
         self.calls.append(("get_batch", batch_id))
         return BatchJob(
             provider="openai", batch_id=batch_id, status=BatchStatus.SUCCEEDED
         )
 
-    async def get_batch_results(self, batch_id):
+    async def get_batch_results(self, batch_id: str) -> BatchResults:
         self.calls.append(("get_batch_results", batch_id))
         return BatchResults(
             provider="openai", batch_id=batch_id, status=BatchStatus.SUCCEEDED, items=[]
@@ -80,7 +83,9 @@ class FakeProvider:
 
 
 def test_build_parser_has_expected_commands() -> None:
-    commands = build_parser()._subparsers._group_actions[0].choices
+    parser = build_parser()
+    subparsers = cast(Any, parser._subparsers)
+    commands = cast(dict[str, Any], subparsers._group_actions[0].choices)
 
     assert sorted(commands) == [
         "batch-results",
@@ -117,29 +122,32 @@ def test_run_dispatches_command(argv: list[str], call: str) -> None:
     factory = FakeFactory()
     stdout = io.StringIO()
 
-    exit_code = async_run(run(argv, factory=factory, stdout=stdout))
+    exit_code = async_run(run(argv, factory=cast(Any, factory), stdout=stdout))
 
     assert exit_code == 0
     assert factory.provider.calls[0][0] == call
     assert json.loads(stdout.getvalue())
 
 
-def test_run_builds_provider_config() -> None:
+def test_run_builds_provider_config(monkeypatch: pytest.MonkeyPatch) -> None:
     factory = FakeFactory()
     stdout = io.StringIO()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
 
     exit_code = async_run(
         run(
             ["--provider", "anthropic", "--model", "claude-sonnet-4-6", "text", "hi"],
-            factory=factory,
+            factory=cast(Any, factory),
             stdout=stdout,
         )
     )
 
     assert exit_code == 0
+    assert factory.config is not None
     assert factory.config.provider == "anthropic"
     assert factory.config.default_model == "claude-sonnet-4-6"
-    assert factory.config.api_key_env == "ANTHROPIC_API_KEY"
+    assert factory.config.api_key is not None
+    assert factory.config.api_key.get_secret_value() == "anthropic-key"
 
 
 def test_structured_output_type_enforces_json_schema() -> None:
@@ -176,7 +184,7 @@ def test_structured_output_type_rejects_invalid_json_schema() -> None:
         _structured_output_type({"type": "definitely-not-a-json-schema-type"}, "Output")
 
 
-def async_run(coro):
+def async_run(coro: Any) -> Any:
     import asyncio
 
     return asyncio.run(coro)

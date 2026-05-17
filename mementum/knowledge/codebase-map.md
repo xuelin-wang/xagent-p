@@ -40,6 +40,7 @@ Important entry points:
 Architectural boundaries:
 
 - Shared LLM contracts/config/retry/files/tools/structured/batch/registry bricks are separated from provider implementation bricks.
+- `components/xagent/llm_config/` owns provider auth config, env defaults, provider-specific config subclasses, and config construction helpers.
 - `llm_registry.provider_protocol` defines the provider protocol and does not import providers.
 - `llm_registry.factory.default_registry()` imports built-in providers lazily.
 - Provider components map common contracts to provider-specific APIs and preserve raw responses.
@@ -63,6 +64,7 @@ Architectural boundaries:
 - `bases/xagent/llm_cli/main.py`
 - `components/xagent/llm_registry/provider_protocol.py`
 - `components/xagent/llm_registry/factory.py`
+- `components/xagent/llm_config/settings.py`
 - `.gitignore`
 - `.dockerignore`
 - `prompts/README.md`

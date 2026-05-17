@@ -1,15 +1,16 @@
-import json
-from pathlib import Path
-from typing import Any, TypeVar, get_args, get_origin
+from __future__ import annotations
 
-import yaml
+import re
+from typing import Any, get_args, get_origin
+
 from pydantic import BaseModel, ConfigDict
-
-ConfigType = TypeVar("ConfigType", bound="StrictConfigModel")
 
 
 class StrictConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+_ENV_VAR_NAME_RE = re.compile(r"[A-Z][A-Z0-9_]*")
 
 
 def _validate_config_key_name(name: str) -> None:
@@ -20,6 +21,16 @@ def _validate_config_key_name(name: str) -> None:
     if name.endswith("_"):
         raise ValueError(
             f"Invalid config key '{name}': keys may not end with an underscore."
+        )
+
+
+def _validate_env_var_name(name: str) -> None:
+    if not name:
+        raise ValueError("Invalid env var name: value must not be empty.")
+    if not _ENV_VAR_NAME_RE.fullmatch(name):
+        raise ValueError(
+            "Invalid env var name "
+            f"'{name}': names must use uppercase letters, digits, and underscores."
         )
 
 
@@ -62,6 +73,59 @@ def validate_model_key_names(model_type: type[StrictConfigModel]) -> None:
     _walk(model_type)
 
 
+def collect_model_env_var_paths(
+    model_type: type[StrictConfigModel],
+) -> dict[str, tuple[str, ...]]:
+    visited: set[type[StrictConfigModel]] = set()
+    env_var_paths: dict[str, tuple[str, ...]] = {}
+
+    def _walk(current_model: type[StrictConfigModel], prefix: tuple[str, ...]) -> None:
+        if current_model in visited:
+            return
+        visited.add(current_model)
+
+        for field_name, field_info in current_model.model_fields.items():
+            extra = field_info.json_schema_extra
+            if extra is not None and not isinstance(extra, dict):
+                raise ValueError(
+                    "Invalid config model: json_schema_extra must be a mapping "
+                    f"for field '{current_model.__name__}.{field_name}'."
+                )
+
+            if extra:
+                secret = extra.get("secret")
+                env_var = extra.get("env_var")
+                if env_var is None:
+                    continue
+                if secret is not True:
+                    raise ValueError(
+                        "Invalid config model: fields with env_var metadata must "
+                        f"also set secret=True for field "
+                        f"'{current_model.__name__}.{field_name}'."
+                    )
+                if not isinstance(env_var, str):
+                    raise ValueError(
+                        "Invalid config model: env_var metadata must be a string "
+                        f"for field '{current_model.__name__}.{field_name}'."
+                    )
+                _validate_env_var_name(env_var)
+                path = (*prefix, field_name)
+                existing = env_var_paths.get(env_var)
+                if existing is not None and existing != path:
+                    raise ValueError(
+                        "Invalid config model: env_var metadata must be unique "
+                        f"across fields. '{env_var}' is used by "
+                        f"'{'.'.join(existing)}' and '{'.'.join(path)}'."
+                    )
+                env_var_paths[env_var] = path
+
+            for nested_model in _iter_nested_model_types(field_info.annotation):
+                _walk(nested_model, (*prefix, field_name))
+
+    _walk(model_type, ())
+    return env_var_paths
+
+
 def validate_mapping_key_names(data: Any) -> None:
     if not isinstance(data, dict):
         return
@@ -94,87 +158,3 @@ def merge_dicts_recursive(
         else:
             result[key] = value
     return result
-
-
-def _parse_env_value(raw_value: str) -> Any:
-    try:
-        return json.loads(raw_value)
-    except json.JSONDecodeError:
-        return raw_value
-
-
-def _assign_nested_value(target: dict[str, Any], key: str, value: Any) -> None:
-    raw_parts = key.split("__")
-    if any(not part.strip() for part in raw_parts):
-        raise ValueError(
-            f"Invalid environment key '{key}': empty path segments are not allowed."
-        )
-
-    parts = [part.strip().lower() for part in raw_parts]
-    for part in parts:
-        _validate_config_key_name(part)
-
-    current = target
-    for part in parts[:-1]:
-        next_value = current.get(part)
-        if not isinstance(next_value, dict):
-            next_value = {}
-            current[part] = next_value
-        current = next_value
-    current[parts[-1]] = value
-
-
-def parse_env_mapping(env: dict[str, str]) -> dict[str, Any]:
-    parsed: dict[str, Any] = {}
-    for key, raw_value in env.items():
-        _assign_nested_value(parsed, key, _parse_env_value(raw_value))
-    return parsed
-
-
-def parse_env_file(path: str | Path) -> dict[str, Any]:
-    parsed: dict[str, Any] = {}
-    for raw_line in Path(path).read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[len("export ") :].strip()
-        key, separator, value = line.partition("=")
-        if not separator:
-            continue
-        _assign_nested_value(parsed, key.strip(), _parse_env_value(value.strip()))
-    return parsed
-
-
-def parse_yaml_file(path: str | Path) -> dict[str, Any]:
-    loaded = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    if loaded is None:
-        return {}
-    if not isinstance(loaded, dict):
-        raise ValueError(f"YAML file must contain a top-level mapping: {path}")
-    validate_mapping_key_names(loaded)
-    return loaded
-
-
-def load_typed_config(
-    config_type: type[ConfigType],
-    env_map: dict[str, str] | None,
-    input_files: list[str | Path],
-) -> ConfigType:
-    validate_model_key_names(config_type)
-    merged: dict[str, Any] = {}
-
-    for input_file in input_files:
-        path = Path(input_file)
-        suffix = path.suffix.lower()
-        parsed = (
-            parse_yaml_file(path)
-            if suffix in {".yaml", ".yml"}
-            else parse_env_file(path)
-        )
-        merged = merge_dicts_recursive(merged, parsed)
-
-    if env_map:
-        merged = merge_dicts_recursive(merged, parse_env_mapping(env_map))
-
-    return config_type.model_validate(merged)

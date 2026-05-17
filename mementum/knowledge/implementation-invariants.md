@@ -34,9 +34,10 @@ Record rules that should remain true unless an explicit design change updates co
 - `pyproject.toml`
 - `components/xagent/llm_registry/provider_protocol.py`
 - `components/xagent/llm_registry/factory.py`
+- `components/xagent/llm_config/settings.py`
 - `components/xagent/llm_provider_openai/provider.py`
 - `components/xagent/llm_provider_anthropic/provider.py`
-- `components/xagent/config.py`
+- `components/xagent/config/strict.py`
 - `test/components/xagent/llm_provider_openai/`
 - `test/components/xagent/llm_provider_anthropic/`
 
