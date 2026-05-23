@@ -46,11 +46,24 @@ MERGE_RESULTS
   ↓
 DECIDE
   ├── REPLAN → PLAN
-  ├── ASK_USER → RESPONSE
+  ├── ASK_USER → WAIT_FOR_USER
   ├── RESPOND → RESPONSE
   └── STOP_LIMIT → RESPONSE
+WAIT_FOR_USER
+  └── USER_INPUT_RECEIVED → BUILD_CONTEXT
+RESPONSE
   ↓
 END
+```
+
+`ASK_USER` is not a final answer. It emits a question or request for clarification, checkpoints the state, and moves the run to `waiting_for_user`.
+
+`RESPONSE` is only for terminal user-visible output:
+
+```text
+final answer
+limit/stop response
+terminal failure response, if exposed to the user
 ```
 
 `VALIDATE_TOOL_CALLS` replaces `APPROVE_TOOL_CALLS`.
@@ -75,8 +88,8 @@ Each step follows the same contract:
 input state + config snapshot
 → step execution
 → output state
-→ ledger record
 → checkpoint
+→ step success record linked to checkpoint
 ```
 
 All steps should use the same reusable execution pattern:
@@ -108,8 +121,11 @@ AgentRuntime
 StepExecutor
   Executes one step using a common contract.
 
-ExecutionLedger
-  Append-only record of every step.
+StepEventLedger
+  Append-only source of truth for step lifecycle events.
+
+StepProjectionStore
+  Rebuildable current-state view of steps derived from step events.
 
 CheckpointStore
   Stores serializable state after each step.
@@ -136,16 +152,66 @@ Do not create separate mechanisms for each.
 
 ---
 
-# 5. Immutable execution ledger
+# 5. Append-only step event ledger
 
-Every step writes one durable record.
+Every step writes append-only lifecycle events.
+
+The key invariant is:
+
+> A step is complete only when its output, state-after checkpoint, and `step_succeeded` event are committed as one logical unit.
+
+This keeps resume simple and preserves a true immutable audit trail. If a process crashes before that logical commit finishes, the step is treated as incomplete and may be retried. Nondeterministic or side-effecting steps still need idempotency keys so retry is safe.
+
+```python
+class StepEvent(BaseModel):
+    event_id: str
+    run_id: str
+    step_id: str
+    parent_step_id: str | None = None
+    sequence_index: int
+    iteration_index: int
+    step_type: str
+    tool_call_id: str | None = None
+    idempotency_key: str | None = None
+
+    event_type: Literal[
+        "step_started",
+        "step_succeeded",
+        "step_failed",
+        "step_timed_out",
+        "step_paused",
+        "step_skipped",
+    ]
+
+    input_ref: str | None = None
+    output_ref: str | None = None
+
+    state_before_ref: str | None = None
+    state_after_ref: str | None = None
+    checkpoint_id: str | None = None
+
+    flow_decision: str | None = None
+    next_step_type: str | None = None
+
+    snapshot_id: str
+
+    occurred_at: datetime
+
+    error_ref: str | None = None
+```
+
+`StepRecord` is a read model, not the immutable source of truth:
 
 ```python
 class StepRecord(BaseModel):
     step_id: str
     run_id: str
+    parent_step_id: str | None = None
+    sequence_index: int
     iteration_index: int
     step_type: str
+    tool_call_id: str | None = None
+    idempotency_key: str | None = None
 
     status: Literal[
         "pending",
@@ -157,22 +223,17 @@ class StepRecord(BaseModel):
         "skipped",
     ]
 
-    input_ref: str
+    latest_event_id: str
+    input_ref: str | None = None
     output_ref: str | None = None
-
-    state_before_ref: str
+    state_before_ref: str | None = None
     state_after_ref: str | None = None
-
-    flow_decision: str | None = None
+    checkpoint_id: str | None = None
     next_step_type: str | None = None
-
-    snapshot_id: str
-
-    started_at: datetime
-    finished_at: datetime | None = None
-
     error_ref: str | None = None
 ```
+
+The `steps` projection can be stored for fast runtime queries, but it must be rebuildable from `step_events`. If projection update fails after an event append, replaying `step_events` repairs the projection.
 
 Large data should live in an artifact store:
 
@@ -183,7 +244,7 @@ state_before_ref → artifact://runs/run_123/steps/001/state_before.json
 state_after_ref  → artifact://runs/run_123/steps/001/state_after.json
 ```
 
-The database stores references and metadata. The artifact store stores full payloads.
+The database stores event references and projection metadata. The artifact store stores full payloads.
 
 ---
 
@@ -197,6 +258,7 @@ class AgentState(BaseModel):
     iteration_index: int = 0
 
     input_query: AgentInput
+    user_input_events: list[UserInputEvent] = []
 
     conversation_summary: str | None = None
 
@@ -208,6 +270,7 @@ class AgentState(BaseModel):
 
     merge_analysis: MergeAnalysis | None = None
     decision: RuntimeDecision | None = None
+    pending_user_request: UserRequest | None = None
 
     final_response: AgentResponse | None = None
 ```
@@ -228,13 +291,16 @@ testable
 
 # 7. Checkpoints
 
-After every successful step, write a checkpoint.
+Every successful step creates exactly one checkpoint.
+
+The checkpoint is the durable state-after image for that step. The runtime should not append `step_succeeded` until the checkpoint exists and the event points to it.
 
 ```python
 class RuntimeCheckpoint(BaseModel):
     checkpoint_id: str
     run_id: str
     after_step_id: str
+    sequence_index: int
 
     state_ref: str
     next_step_type: str
@@ -247,7 +313,8 @@ class RuntimeCheckpoint(BaseModel):
 Resume becomes simple:
 
 ```text
-load latest checkpoint
+load latest step_succeeded event for the run by sequence_index
+load that event's checkpoint
 load state
 load snapshot
 continue from next_step_type
@@ -258,6 +325,27 @@ Rule:
 > Resume should never re-run a completed nondeterministic step unless explicitly requested.
 
 If an LLM planner step already completed, resume should reuse its recorded output.
+
+Incomplete step rule:
+
+```text
+started/failed/timed_out event without a later step_succeeded checkpoint
+→ incomplete
+→ eligible for retry according to retry/idempotency policy
+```
+
+Recommended commit order:
+
+```text
+run step
+write output artifact
+write state_after artifact
+save checkpoint for state_after + next_step_type
+append step_succeeded event with checkpoint_id
+update derived step projection
+```
+
+For a database-backed implementation, save the checkpoint row and append the `step_succeeded` event in one transaction. Projection updates may happen in the same transaction for convenience, but correctness must come from the append-only event. For an artifact-backed implementation, write artifacts first and only then commit the checkpoint and success event metadata.
 
 ---
 
@@ -382,9 +470,18 @@ class ValidatedToolCall(BaseModel):
     tool_name: str
     purpose: str
     input: dict[str, Any]
+    idempotency_key: str
     timeout_ms: int
     validation_notes: list[str] = []
 ```
+
+`tool_call_id` must be stable for the planned call within the run. A simple default is:
+
+```text
+{run_id}:{iteration_index}:{tool_name}:{normalized_input_hash}
+```
+
+`idempotency_key` should be passed to tool implementations and, for external APIs or write-side actuators, forwarded to the external system when supported.
 
 Rejected calls should also be recorded:
 
@@ -406,7 +503,55 @@ Runtime kept the top 4 due to max_tools_per_iteration.
 
 ---
 
-# 11. Replay model
+# 11. Per-call tool execution durability
+
+`EXECUTE_TOOLS` is an orchestration phase, not one monolithic durable unit.
+
+Each validated tool call must run as its own child durable step:
+
+```text
+EXECUTE_TOOLS parent step
+  ├── tool_call child step: tool_call_id=A
+  ├── tool_call child step: tool_call_id=B
+  └── tool_call child step: tool_call_id=C
+```
+
+The child step uses:
+
+```text
+step_type = "tool_call"
+parent_step_id = execute_tools_step_id
+tool_call_id = validated_tool_call.tool_call_id
+idempotency_key = validated_tool_call.idempotency_key
+```
+
+Resume rule:
+
+```text
+for each validated tool call:
+  if a child step_succeeded event exists for tool_call_id:
+    reuse recorded tool result
+  else:
+    execute or retry that tool call according to policy
+```
+
+This prevents duplicate work after a partial crash. If three tools are selected and the first succeeds before the process exits, resume reuses the first result and only runs the remaining two.
+
+Write-side actuators need stricter handling:
+
+```text
+must have stable idempotency_key
+must record request and response artifacts
+should forward idempotency_key to the external system
+should require validation or human approval when policy says so
+must not be blindly re-executed if prior success is recorded
+```
+
+The parent `EXECUTE_TOOLS` step succeeds only after all required child tool-call steps have reached a terminal status and the merged `tool_results` state has been checkpointed. The parent output should reference the child step IDs rather than duplicating large result payloads.
+
+---
+
+# 12. Replay model
 
 Replay should have clear modes.
 
@@ -444,7 +589,7 @@ This should create a **new run**, because external systems and LLMs may produce 
 
 ---
 
-# 12. Pause and resume
+# 13. Pause and resume
 
 Pause should happen at step boundaries.
 
@@ -458,27 +603,70 @@ before RESPONSE
 before any write-side actuator
 ```
 
-Pause is just a checkpoint with status:
+Pause is just a completed step checkpoint plus a paused run status:
 
 ```text
 step completed
-checkpoint written
+checkpoint written and linked from the step_succeeded event
 run status = paused
 ```
 
 Resume is:
 
 ```text
-load checkpoint
+load latest step_succeeded event checkpoint by sequence_index
 restore state
 continue from next_step_type
 ```
 
 No special pause/resume architecture is needed.
 
+Waiting for user input is a specific pause state:
+
+```text
+ASK_USER step succeeds
+checkpoint is written with pending_user_request
+run status = waiting_for_user
+next_step_type = WAIT_FOR_USER
+```
+
+The user reply is recorded as an append-only input event:
+
+```python
+class UserInputEvent(BaseModel):
+    event_id: str
+    run_id: str
+    request_id: str
+    input_ref: str
+    occurred_at: datetime
+```
+
+The pending request should also be explicit in state:
+
+```python
+class UserRequest(BaseModel):
+    request_id: str
+    prompt: str
+    required: bool = True
+```
+
+Resume with user input:
+
+```text
+append UserInputEvent
+load latest step_succeeded checkpoint
+restore state
+attach user input event to state.user_input_events
+clear pending_user_request
+set run status = running
+continue from BUILD_CONTEXT or the configured next step
+```
+
+The original run continues; this is not a new run. The new user input is an explicit durable input record so audit playback can show exactly where the agent paused and what user data resumed it.
+
 ---
 
-# 13. Evaluation as a natural consequence
+# 14. Evaluation as a natural consequence
 
 Evaluation should consume recorded runs.
 
@@ -488,7 +676,8 @@ Evaluator input:
 
 ```text
 run record
-step ledger
+step event ledger
+user input events
 final response
 planner output
 validated tool calls
@@ -517,7 +706,7 @@ Because every run has a ledger and snapshot, evaluation becomes straightforward.
 
 ---
 
-# 14. PEAS mapping
+# 15. PEAS mapping
 
 Use PEAS as an organizing concept, not as extra architecture.
 
@@ -546,14 +735,16 @@ Write-side actions are stronger **actuators** and should have stricter validatio
 
 ---
 
-# 15. Minimal durable data model
+# 16. Minimal durable data model
 
 Use only a few durable concepts:
 
 ```text
 runs
 snapshots
-steps
+user_input_events
+step_events
+steps projection
 checkpoints
 artifacts
 evaluations
@@ -571,6 +762,21 @@ runs
   finished_at
   final_response_ref
 
+run status should include:
+  pending
+  running
+  paused
+  waiting_for_user
+  completed
+  failed
+
+user_input_events
+  event_id
+  run_id
+  request_id
+  input_ref
+  occurred_at
+
 snapshots
   id
   config_ref
@@ -580,16 +786,43 @@ snapshots
   model_config_ref
   code_version
 
-steps
-  id
+step_events
+  event_id
   run_id
+  step_id
+  parent_step_id
+  sequence_index
   iteration_index
   step_type
-  status
+  tool_call_id
+  idempotency_key
+  event_type
   input_ref
   output_ref
   state_before_ref
   state_after_ref
+  checkpoint_id
+  next_step_type
+  error_ref
+  snapshot_id
+  occurred_at
+
+steps projection
+  id
+  run_id
+  parent_step_id
+  sequence_index
+  iteration_index
+  step_type
+  tool_call_id
+  idempotency_key
+  status
+  latest_event_id
+  input_ref
+  output_ref
+  state_before_ref
+  state_after_ref
+  checkpoint_id
   next_step_type
   error_ref
 
@@ -597,6 +830,7 @@ checkpoints
   id
   run_id
   after_step_id
+  sequence_index
   state_ref
   next_step_type
 
@@ -618,44 +852,63 @@ Avoid many component-specific tables early. Store detailed payloads as JSON arti
 
 ---
 
-# 16. Final recommended structure
+# 17. Repo-aligned implementation structure
+
+Implement this design by evolving the existing Polylith components, not by creating parallel top-level runtime packages.
+
+The current `components/xagent/agent_flow/` package remains the owner of orchestration, state, and specialized step behavior. The current planner, subagent, and summary executors should become specialized steps that extend the general step pattern rather than separate runtime concepts.
 
 ```text
-agent_runtime/
-  runner.py
-  state.py
-  steps.py
-  executor.py
-  decision.py
+components/xagent/agent_flow/
+  runtime.py          # fixed state machine and run orchestration
+  service.py          # application-facing start/get/resume facade
+  models.py           # AgentState, decisions, tool calls, user requests
+  steps.py            # RuntimeStep protocol and common StepResult types
+  step_executor.py    # generic step execution around event/checkpoint commit
+  planner.py          # planner step implementation
+  tools.py            # EXECUTE_TOOLS parent step and tool_call child steps
+  tool_registry.py    # tool metadata, lookup, validation helpers
+  subagents.py        # subagent-backed specialized steps, if still needed
+  summary.py          # merge/decide/response specialized steps
+  replay.py           # audit playback and deterministic replay helpers
+  evaluation.py       # evaluator entrypoints over recorded runs
 
-agent_tools/
-  base.py
-  registry.py
-  validation.py
+components/xagent/agent_persistence/
+  repositories.py     # repository protocols for runs, events, checkpoints, artifacts
+  memory.py           # in-memory implementations for deterministic tests
+  events.py           # StepEvent append/read helpers and projection rebuild
+  checkpoints.py      # checkpoint store implementations
+  artifacts.py        # artifact references and payload storage
+  snapshots.py        # config/prompt/tool/model snapshot storage
 
-agent_records/
-  ledger.py
-  checkpoints.py
-  snapshots.py
-  artifacts.py
+bases/xagent/agent_flow_cli/
+  main.py             # CLI surface for start/get/resume/replay/evaluate
 
-agent_replay/
-  playback.py
-  deterministic_replay.py
-
-agent_eval/
-  evaluator.py
-  metrics.py
-  report.py
+bases/xagent/api_http/
+  routes_agent_flow.py # HTTP surface for start/get/resume/user-input
 ```
 
-This is intentionally small.
+This structure is a migration target, not a mandate to rename every existing file immediately. Prefer small changes that adapt current modules:
 
-The most reusable layer is `agent_records`. It supports runtime, replay, resume, and evaluation.
+```text
+existing PlannerExecutor
+→ PlannerStep implementing RuntimeStep
+
+existing subagent execution
+→ specialized step or tool_call child step, depending on whether it is still a subagent abstraction
+
+existing SummaryExecutor
+→ Merge/Decide/Response step implementation
+
+existing StepRunner
+→ generic StepExecutor that appends StepEvent records and commits checkpoints
+```
+
+The most reusable layer is still the persistence record layer: step events, checkpoints, snapshots, artifacts, and projections. In this repo, that layer belongs under `components/xagent/agent_persistence/`, while orchestration and domain-specific step implementations belong under `components/xagent/agent_flow/`.
 
 ---
 
-# 17. Final design principle
+# 18. Final design principle
 
 The system should not be designed as:
 
