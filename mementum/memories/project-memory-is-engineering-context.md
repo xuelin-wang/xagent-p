@@ -2,6 +2,8 @@
 
 Symbol: 📌
 
+Status: superseded
+
 Project memory exists to help future engineering sessions start with better context.
 
 It should capture durable knowledge that is not obvious from code alone: design rationale, implementation conventions, known pitfalls, and current project direction.
@@ -13,3 +15,6 @@ Why it matters:
 
 Future implication:
 - Add memory only when it will likely help a future design or implementation session.
+
+Superseded by:
+- `mementum/knowledge/project-memory-policy.md`

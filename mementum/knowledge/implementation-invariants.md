@@ -6,6 +6,7 @@ tags: [invariants, implementation]
 related:
   - architecture-decisions
   - testing-and-evaluation
+  - security-and-data-boundaries
 ---
 
 # Implementation Invariants
@@ -25,6 +26,9 @@ Record rules that should remain true unless an explicit design change updates co
 - Provider resource mutations such as file upload/delete and batch create/cancel should not be automatically retried without a documented idempotency strategy.
 - Native batch callers provide request `items`; public pre-uploaded batch input-file support is intentionally unsupported.
 - Runtime config models are strict and reject extra keys.
+- Config and dataclass fields holding API keys or other secrets must use `SecretStr | None`, not `str | None`.
+- Provider API keys are hydrated through explicit config-model metadata such as `json_schema_extra={"secret": True, "env_var": "OPENAI_API_KEY"}`.
+- Runtime environment-variable overrides must only apply to fields with explicit env metadata; do not infer env bindings from field names.
 - Normal pytest runs must exclude live provider tests unless explicitly requested with `require_env`.
 - Project memory under `mementum/` must not contain secrets, runtime records, logs, or private data.
 
@@ -35,6 +39,8 @@ Record rules that should remain true unless an explicit design change updates co
 - `components/xagent/llm_registry/provider_protocol.py`
 - `components/xagent/llm_registry/factory.py`
 - `components/xagent/llm_config/settings.py`
+- `components/xagent/config/loader.py`
+- `components/xagent/config/runtime.py`
 - `components/xagent/llm_provider_openai/provider.py`
 - `components/xagent/llm_provider_anthropic/provider.py`
 - `components/xagent/config/strict.py`

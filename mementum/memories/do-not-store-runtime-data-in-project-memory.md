@@ -2,6 +2,8 @@
 
 Symbol: ⚠️
 
+Status: superseded
+
 `mementum/` is for engineering/project context only.
 
 Do not store runtime application records, raw logs, user data, customer data, production data, secrets, credentials, or large generated artifacts here.
@@ -13,3 +15,7 @@ Why it matters:
 
 Future implication:
 - If data belongs to the running application, store it in the appropriate runtime datastore, not in `mementum/`.
+
+Superseded by:
+- `mementum/knowledge/project-memory-policy.md`
+- `mementum/knowledge/security-and-data-boundaries.md`
