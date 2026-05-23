@@ -18,8 +18,9 @@ from xagent.agent_flow.models import (
     SummaryDecision,
     SummaryOutput,
 )
-from xagent.agent_flow.planner import PlannerExecutor
+from xagent.agent_flow.planner import PlannerExecutor, PlannerStep
 from xagent.agent_flow.step_runner import StepRunner
+from xagent.agent_flow.steps import RetryPolicy, RuntimeContext, StepExecutionPolicy
 from xagent.agent_flow.subagents import FlowSubagent
 from xagent.agent_flow.summary import SummaryExecutor
 from xagent.agent_persistence.repositories import (
@@ -149,27 +150,28 @@ class AgentFlowRuntime:
         iteration: AgentFlowIteration,
     ) -> None:
         state.current_stage = FlowStage.PLANNING
-        output_json = await self._step_runner.run_step(
+        planner_step = PlannerStep(
+            executor=self._planner,
+            subagents=self._config.subagents,
+            max_selections=self._config.workflow.max_subagents_per_iteration,
+        )
+        context = RuntimeContext(
+            execution_policy=StepExecutionPolicy(
+                retry=RetryPolicy(max_attempts=self._config.planner.max_attempts),
+            )
+        )
+        output_json = await self._step_runner.run_runtime_step(
             state=state,
             step_name="planner",
-            step_type="planner",
             input_json={
                 "query": state.user_query,
                 "subagents": list(self._config.subagents),
             },
-            max_attempts=self._config.planner.max_attempts,
-            fn=lambda _: self._plan_step(state),
+            step=planner_step,
+            context=context,
         )
         iteration.plan = PlanOutput.model_validate(output_json)
         await self._save_state(state, checkpoint_name="planner")
-
-    async def _plan_step(self, state: AgentFlowState) -> dict[str, Any]:
-        plan = await self._planner.plan(
-            state=state,
-            subagents=self._config.subagents,
-            max_selections=self._config.workflow.max_subagents_per_iteration,
-        )
-        return plan.model_dump(mode="json")
 
     async def _run_subagents(
         self,

@@ -12,6 +12,7 @@ from xagent.agent_flow.models import (
     PlanOutput,
     PlanSubagentSelection,
 )
+from xagent.agent_flow.steps import RuntimeContext, StepResult
 
 
 class PlannerExecutor(Protocol):
@@ -33,6 +34,39 @@ class LLMPlannerDecision(BaseModel):
     goal: str
     selections: list[PlanSubagentSelection] = Field(default_factory=list)
     rationale: str = ""
+
+
+class PlannerStep:
+    """RuntimeStep adapter for planner executors.
+
+    Purpose: let existing planner executors run through the general step
+    contract while preserving their public `plan(...)` API.
+    """
+
+    step_type = "planner"
+
+    def __init__(
+        self,
+        *,
+        executor: PlannerExecutor,
+        subagents: Mapping[str, SubagentConfig],
+        max_selections: int,
+    ):
+        self._executor = executor
+        self._subagents = subagents
+        self._max_selections = max_selections
+
+    async def run(
+        self,
+        state: AgentFlowState,
+        context: RuntimeContext,
+    ) -> StepResult:
+        plan = await self._executor.plan(
+            state=state,
+            subagents=self._subagents,
+            max_selections=self._max_selections,
+        )
+        return StepResult(output_json=plan.model_dump(mode="json"))
 
 
 class FakePlannerExecutor:

@@ -5,6 +5,7 @@ from typing import Any
 
 from xagent.agent_flow.errors import NonRetryableStepError, StepRunnerError
 from xagent.agent_flow.models import AgentFlowState, StepStatus
+from xagent.agent_flow.steps import RuntimeContext, RuntimeStep
 from xagent.agent_persistence.repositories import StepRecord, StepRepository
 
 StepFunction = Callable[[StepRecord], Awaitable[dict[str, Any]]]
@@ -13,6 +14,30 @@ StepFunction = Callable[[StepRecord], Awaitable[dict[str, Any]]]
 class StepRunner:
     def __init__(self, step_repository: StepRepository):
         self._step_repository = step_repository
+
+    async def run_runtime_step(
+        self,
+        *,
+        state: AgentFlowState,
+        step_name: str,
+        input_json: dict[str, Any],
+        step: RuntimeStep,
+        context: RuntimeContext,
+    ) -> dict[str, Any]:
+        """Run a RuntimeStep through the existing durable step machinery."""
+
+        return await self.run_step(
+            state=state,
+            step_name=step_name,
+            step_type=step.step_type,
+            input_json=input_json,
+            max_attempts=context.execution_policy.retry.max_attempts,
+            fn=lambda _: self._run_runtime_step(
+                step=step,
+                state=state,
+                context=context,
+            ),
+        )
 
     async def run_step(
         self,
@@ -105,3 +130,13 @@ class StepRunner:
             "error_type": type(exc).__name__,
             "retryable": retryable,
         }
+
+    async def _run_runtime_step(
+        self,
+        *,
+        step: RuntimeStep,
+        state: AgentFlowState,
+        context: RuntimeContext,
+    ) -> dict[str, Any]:
+        result = await step.run(state=state, context=context)
+        return result.output_json
