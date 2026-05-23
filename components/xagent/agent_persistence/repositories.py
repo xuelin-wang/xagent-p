@@ -1,10 +1,50 @@
 from __future__ import annotations
 
+from datetime import datetime
+from enum import StrEnum
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
 from xagent.agent_flow.models import AgentFlowState, StepStatus
+
+
+class StepEventType(StrEnum):
+    CREATED = "step_created"
+    STARTED = "step_started"
+    SUCCEEDED = "step_succeeded"
+    FAILED = "step_failed"
+
+
+class StepEvent(BaseModel):
+    """Append-only execution event used to derive StepRecord projections."""
+
+    event_id: str
+    run_id: str
+    step_id: str
+    sequence_index: int
+    iteration_index: int
+    step_name: str
+    step_type: str
+    attempt_index: int
+    event_type: StepEventType
+    occurred_at: datetime
+    input_json: dict[str, Any] = Field(default_factory=dict)
+    output_json: dict[str, Any] | None = None
+    error_json: dict[str, Any] | None = None
+    input_ref: str | None = None
+    output_ref: str | None = None
+    error_ref: str | None = None
+    state_before_ref: str | None = None
+    state_after_ref: str | None = None
+    checkpoint_id: str | None = None
+    max_attempts: int = 1
+    idempotency_key: str
+    parent_step_id: str | None = None
+    tool_call_id: str | None = None
+    snapshot_id: str | None = None
+    flow_decision: str | None = None
+    next_step_type: str | None = None
 
 
 class StepRecord(BaseModel):
@@ -76,6 +116,16 @@ class StepRepository(Protocol):
         run_id: str,
         iteration: int,
     ) -> list[StepRecord]: ...
+
+    async def append_step_event(self, event: StepEvent) -> StepEvent: ...
+
+    async def get_step_events_for_run(self, run_id: str) -> list[StepEvent]: ...
+
+    async def get_step_events_for_step(self, step_id: str) -> list[StepEvent]: ...
+
+    async def get_latest_succeeded_event(self, run_id: str) -> StepEvent | None: ...
+
+    async def rebuild_step_projection(self) -> list[StepRecord]: ...
 
 
 class CheckpointRepository(Protocol):
