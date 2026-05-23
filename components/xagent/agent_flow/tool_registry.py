@@ -2,8 +2,35 @@
 
 Purpose: validate planned tool calls against registered tool metadata and
 produce validated or rejected call records before execution.
+Rationale: tool metadata lookup, validation, and policy resolution belong
+together but must not be coupled to execution or persistence.
 Design link: replay-resume-agent-system-design.md sections 9 and 10.
+Public surface: ToolRegistry.validate_calls() is called by the
+VALIDATE_TOOL_CALLS step (wired in Stage 6).
 Non-goal: tool execution belongs in tools.py (Stage 6).
+
+Policy resolution (design section 10, four levels):
+  1. runtime default step policy
+  2. tool_call step-type override
+  Levels 1+2 are pre-merged by the caller into base_policy.
+  3. tool metadata override (timeout_ms, deadline_ms, retry_policy)
+  4. explicit per-call override on ValidatedToolCall — deferred to Stage 6
+     when the VALIDATE_TOOL_CALLS step is wired into the runtime.
+
+Validation checks in scope for Stage 5 (design section 10):
+  - tool exists in registry
+  - tool is enabled
+  - call is not duplicated (by stable tool_call_id)
+  - call fits max tool count (by priority order)
+  - timeout/deadline policy is assigned from effective policy
+
+Checks deferred to later stages (all recorded in validation_notes):
+  - input matches schema (deferred — input_schema is stored but no validator
+    is wired yet; full structured validation requires schema tooling)
+  - call is permitted (deferred — permission model not yet defined)
+  - call fits latency/cost budget (deferred — budget accounting not yet wired)
+  - dataset is available (deferred — dataset availability check requires a
+    live registry or manifest; dataset metadata is stored for future use)
 """
 
 from __future__ import annotations
@@ -17,6 +44,13 @@ from pydantic import BaseModel, Field
 
 from xagent.agent_flow.steps import RetryPolicy, StepExecutionPolicy
 from xagent.config import StrictConfigModel
+
+_DEFERRED_NOTES = [
+    "schema validation deferred (Stage 6)",
+    "permission check deferred (Stage 6)",
+    "cost/latency budget check deferred (Stage 6)",
+    "dataset availability check deferred (Stage 6)",
+]
 
 
 class ToolMetadata(StrictConfigModel):
@@ -52,6 +86,10 @@ class ValidatedToolCall(BaseModel):
     purpose: str
     input: dict[str, Any]
     idempotency_key: str
+    # 0 means no timeout enforced; callers should treat 0 as "unbounded."
+    # The design requires a concrete int here so the executor never has to
+    # handle None. When no timeout is configured in the policy chain, the
+    # registry sets 0.
     timeout_ms: int
     deadline_ms: int | None = None
     retry_policy: RetryPolicy | None = None
@@ -94,11 +132,7 @@ class ValidationResult(BaseModel):
 
 
 class ToolRegistry:
-    """Holds registered tools and validates planned calls against them.
-
-    Public surface: validate_calls() is called by the VALIDATE_TOOL_CALLS step.
-    Tests: see test_tool_registry.py.
-    """
+    """Holds registered tools and validates planned calls against them."""
 
     def __init__(self, tools: list[ToolMetadata] | None = None) -> None:
         self._tools: dict[str, ToolMetadata] = (
@@ -122,35 +156,36 @@ class ToolRegistry:
     ) -> ValidationResult:
         """Validate planned calls and return validated + rejected lists.
 
-        Policy resolution order per design section 10:
-          1. base_policy (runtime default + tool_call step override, resolved by caller)
-          2. tool metadata override for timeout/deadline/retry
+        Policy resolution: base_policy (levels 1+2 pre-merged by caller) is
+        merged with tool metadata overrides (level 3). Level-4 per-call
+        override is deferred to Stage 6.
+
+        Calls are processed in ascending priority order. When max_tools is
+        set, the lowest-priority excess calls are rejected.
         """
         validated: list[ValidatedToolCall] = []
         rejected: list[RejectedToolCall] = []
         seen_call_ids: set[str] = set()
 
-        sorted_calls = sorted(planned_calls, key=lambda c: c.priority)
-
-        for call in sorted_calls:
+        for call in sorted(planned_calls, key=lambda c: c.priority):
             metadata = self._tools.get(call.tool_name)
 
             if metadata is None:
                 rejected.append(
-                    RejectedToolCall(
-                        tool_name=call.tool_name, reason="unknown tool"
-                    )
+                    RejectedToolCall(tool_name=call.tool_name, reason="unknown tool")
                 )
                 continue
 
             if not metadata.enabled:
                 rejected.append(
-                    RejectedToolCall(
-                        tool_name=call.tool_name, reason="tool disabled"
-                    )
+                    RejectedToolCall(tool_name=call.tool_name, reason="tool disabled")
                 )
                 continue
 
+            # tool_call_id: stable across resume for the same logical call.
+            # Formula: {run_id}:{iteration_index}:{tool_name}:{sha256(input)[:12]}
+            # The 12-hex-char hash prefix provides 48 bits of uniqueness —
+            # sufficient for deduplication within a single run iteration.
             call_id = _stable_tool_call_id(
                 run_id, iteration_index, call.tool_name, call.input
             )
@@ -180,10 +215,14 @@ class ToolRegistry:
                     tool_name=call.tool_name,
                     purpose=call.purpose,
                     input=call.input,
+                    # idempotency_key == tool_call_id for read-only tools.
+                    # Write-side actuators may need a distinct key; that
+                    # distinction is handled in Stage 6.
                     idempotency_key=call_id,
                     timeout_ms=effective.timeout_ms or 0,
                     deadline_ms=effective.deadline_ms,
                     retry_policy=effective.retry,
+                    validation_notes=list(_DEFERRED_NOTES),
                 )
             )
 
@@ -204,10 +243,10 @@ def _stable_tool_call_id(
 def _resolve_tool_policy(
     base: StepExecutionPolicy, metadata: ToolMetadata
 ) -> StepExecutionPolicy:
-    """Merge tool metadata overrides on top of the base policy.
+    """Merge tool metadata overrides (level 3) on top of base policy (levels 1+2).
 
-    Fields set in tool metadata take precedence over base_policy fields.
-    Fields not set in metadata are inherited from base.
+    Only fields explicitly set in metadata override the base; unset fields
+    are inherited from base unchanged.
     """
     updates: dict[str, Any] = {}
     if metadata.timeout_ms is not None:

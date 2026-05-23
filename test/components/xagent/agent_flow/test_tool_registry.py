@@ -4,14 +4,11 @@ from xagent.agent_flow.steps import RetryPolicy, StepExecutionPolicy
 from xagent.agent_flow.tool_registry import (
     EvidenceItem,
     PlannedToolCall,
-    RejectedToolCall,
     ToolMetadata,
     ToolRegistry,
     ToolResult,
-    ValidatedToolCall,
     _stable_tool_call_id,
 )
-
 
 # ---------------------------------------------------------------------------
 # stable tool_call_id
@@ -27,6 +24,12 @@ def test_stable_tool_call_id_is_deterministic() -> None:
 def test_stable_tool_call_id_differs_on_input_change() -> None:
     id1 = _stable_tool_call_id("run1", 0, "search", {"q": "foo"})
     id2 = _stable_tool_call_id("run1", 0, "search", {"q": "bar"})
+    assert id1 != id2
+
+
+def test_stable_tool_call_id_differs_on_run_id_change() -> None:
+    id1 = _stable_tool_call_id("run1", 0, "search", {"q": "foo"})
+    id2 = _stable_tool_call_id("run2", 0, "search", {"q": "foo"})
     assert id1 != id2
 
 
@@ -77,6 +80,19 @@ def test_validate_calls_returns_validated_call_for_known_enabled_tool() -> None:
     assert vc.timeout_ms == 5_000
 
 
+def test_validated_call_propagates_purpose() -> None:
+    registry = _registry_with_tools("search")
+    result = registry.validate_calls(
+        run_id="run1",
+        iteration_index=0,
+        planned_calls=[
+            PlannedToolCall(tool_name="search", purpose="find oil records", input={})
+        ],
+        base_policy=_base_policy(),
+    )
+    assert result.validated[0].purpose == "find oil records"
+
+
 def test_validated_call_inherits_base_policy_retry() -> None:
     registry = _registry_with_tools("search")
     base = StepExecutionPolicy(
@@ -93,6 +109,60 @@ def test_validated_call_inherits_base_policy_retry() -> None:
     assert vc.retry_policy is not None
     assert vc.retry_policy.max_attempts == 3
     assert vc.retry_policy.retryable_error_types == ["TimeoutError"]
+
+
+def test_validated_call_has_deferred_validation_notes() -> None:
+    registry = _registry_with_tools("search")
+    result = registry.validate_calls(
+        run_id="run1",
+        iteration_index=0,
+        planned_calls=[PlannedToolCall(tool_name="search", input={})],
+        base_policy=_base_policy(),
+    )
+    notes = result.validated[0].validation_notes
+    assert any("schema" in n for n in notes)
+    assert any("permission" in n for n in notes)
+    assert any("cost" in n or "latency" in n for n in notes)
+    assert any("dataset" in n for n in notes)
+
+
+def test_validate_calls_is_deterministic() -> None:
+    registry = _registry_with_tools("a", "b")
+    calls = [
+        PlannedToolCall(tool_name="a", input={"x": 1}),
+        PlannedToolCall(tool_name="b", input={"x": 2}),
+    ]
+    result1 = registry.validate_calls(
+        run_id="run1",
+        iteration_index=0,
+        planned_calls=calls,
+        base_policy=_base_policy(),
+    )
+    result2 = registry.validate_calls(
+        run_id="run1",
+        iteration_index=0,
+        planned_calls=calls,
+        base_policy=_base_policy(),
+    )
+    assert result1 == result2
+
+
+# ---------------------------------------------------------------------------
+# timeout_ms fallback when no timeout is configured
+# ---------------------------------------------------------------------------
+
+
+def test_validated_call_timeout_ms_zero_when_policy_has_no_timeout() -> None:
+    registry = _registry_with_tools("t")
+    result = registry.validate_calls(
+        run_id="run1",
+        iteration_index=0,
+        planned_calls=[PlannedToolCall(tool_name="t", input={})],
+        base_policy=StepExecutionPolicy(),  # timeout_ms=None
+    )
+    # 0 signals "no timeout enforced" when neither base policy nor tool
+    # metadata configures one.
+    assert result.validated[0].timeout_ms == 0
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +236,7 @@ def test_validate_calls_allows_same_tool_with_different_inputs() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Rejection: max tool count
+# Rejection: max tool count, with priority ordering
 # ---------------------------------------------------------------------------
 
 
@@ -186,6 +256,25 @@ def test_validate_calls_enforces_max_tools() -> None:
     assert len(result.validated) == 2
     assert len(result.rejected) == 1
     assert result.rejected[0].reason == "exceeds max tool count"
+
+
+def test_validate_calls_max_tools_selects_by_priority() -> None:
+    registry = _registry_with_tools("low_pri", "high_pri", "mid_pri")
+    result = registry.validate_calls(
+        run_id="run1",
+        iteration_index=0,
+        planned_calls=[
+            PlannedToolCall(tool_name="low_pri", input={}, priority=300),
+            PlannedToolCall(tool_name="high_pri", input={}, priority=10),
+            PlannedToolCall(tool_name="mid_pri", input={}, priority=200),
+        ],
+        base_policy=_base_policy(),
+        max_tools=2,
+    )
+    validated_names = {vc.tool_name for vc in result.validated}
+    rejected_names = {rc.tool_name for rc in result.rejected}
+    assert validated_names == {"high_pri", "mid_pri"}
+    assert rejected_names == {"low_pri"}
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +351,20 @@ def test_tool_metadata_unset_fields_inherit_base_timeout() -> None:
 # ---------------------------------------------------------------------------
 # ToolResult model
 # ---------------------------------------------------------------------------
+
+
+def test_tool_result_succeeded_status() -> None:
+    result = ToolResult(
+        tool_call_id="run1:0:search:abc123",
+        tool_name="search",
+        status="succeeded",
+        output_ref="artifact://runs/run1/steps/001/output.json",
+        attempt_count=1,
+        elapsed_ms=120,
+    )
+    assert result.status == "succeeded"
+    assert result.output_ref is not None
+    assert result.elapsed_ms == 120
 
 
 def test_tool_result_preserves_all_failure_fields() -> None:
