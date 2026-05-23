@@ -25,6 +25,31 @@ structured input
 
 The system is adaptable because prompts, tools, datasets, policies, models, and limits are configurable and versioned. The runtime itself stays mostly stable.
 
+## 1.1 Why this shape
+
+The design should keep the core runtime small and stable:
+
+```text
+fixed state machine
+generic step execution
+append-only step events
+checkpoint-aligned completion
+versioned snapshots
+artifact references
+execution policy
+```
+
+Planner behavior, tool calls, merge logic, decisions, user waits, responses, replay, and evaluation should be built around that core rather than added as independent subsystems.
+
+Principles:
+
+- Minimalist core: generic runtime code should own orchestration, step execution, events, checkpoints, snapshots, artifacts, and policy; it should not own planner/tool/response domain logic.
+- Specialized edges: planner, tool calls, merge, decision, ask-user, and response are specialized steps using the same runtime contract.
+- Adaptable by configuration: prompts, tools, datasets, models, policies, limits, and evaluators should be configured and snapshotted rather than hard-coded in the runtime.
+- Append-only truth: step events are the durable source of truth; projections exist for fast reads and must be rebuildable.
+- Failure is first-class: timeout, deadline, retry, partial failure, pause, waiting-for-user, and resume are normal runtime states with explicit records.
+- Small extensions: new files and functions should have a clear responsibility, rationale, design-section link, tests, and non-goals.
+
 ---
 
 # 2. Minimal state machine
@@ -171,6 +196,7 @@ class StepEvent(BaseModel):
     sequence_index: int
     iteration_index: int
     step_type: str
+    attempt_index: int = 1
     tool_call_id: str | None = None
     idempotency_key: str | None = None
 
@@ -210,6 +236,7 @@ class StepRecord(BaseModel):
     sequence_index: int
     iteration_index: int
     step_type: str
+    attempt_count: int = 0
     tool_call_id: str | None = None
     idempotency_key: str | None = None
 
@@ -347,6 +374,83 @@ update derived step projection
 
 For a database-backed implementation, save the checkpoint row and append the `step_succeeded` event in one transaction. Projection updates may happen in the same transaction for convenience, but correctness must come from the append-only event. For an artifact-backed implementation, write artifacts first and only then commit the checkpoint and success event metadata.
 
+## Execution policy, retries, timeouts, and deadlines
+
+Every step should resolve an execution policy before it runs.
+
+Use global defaults first. A step may define an optional override. If a field is not set on the step override, inherit the global value.
+
+```python
+class RetryPolicy(BaseModel):
+    max_attempts: int = 1
+    backoff_initial_ms: int = 0
+    backoff_max_ms: int | None = None
+    backoff_multiplier: float = 1.0
+    retryable_error_types: list[str] = Field(default_factory=list)
+
+
+class StepExecutionPolicy(BaseModel):
+    timeout_ms: int | None = None       # per attempt
+    deadline_ms: int | None = None      # total wall-clock budget for this step
+    retry: RetryPolicy = Field(default_factory=RetryPolicy)
+    continue_on_failure: bool = False
+
+
+class RuntimeExecutionPolicy(BaseModel):
+    default_step_policy: StepExecutionPolicy
+    step_overrides: dict[str, StepExecutionPolicy] = Field(default_factory=dict)
+```
+
+Resolution:
+
+```text
+effective_policy = runtime.default_step_policy merged with step_overrides[step_type]
+```
+
+For tool calls, the lookup may be more specific:
+
+```text
+runtime default
+→ step_type override for "tool_call"
+→ tool metadata/config override for the specific tool
+→ validated call override, if explicitly set
+```
+
+Timeout and deadline semantics:
+
+```text
+timeout_ms
+  maximum duration for one attempt
+
+deadline_ms
+  maximum total wall-clock duration for all attempts of the same step/tool_call_id,
+  including backoff
+```
+
+Retry semantics:
+
+```text
+on attempt failure:
+  write error artifact
+  append step_failed or step_timed_out event with error_ref
+  if retryable and attempts remain and deadline remains:
+    back off according to policy
+    append a new step_started event with the next attempt_index
+  else:
+    terminal failure for that step
+```
+
+A timeout is retryable only if policy says timeout errors are retryable.
+
+Write-side actuators are stricter:
+
+```text
+if the tool has external side effects:
+  retries require a stable idempotency_key
+  retries should forward the key to the external system when supported
+  if idempotency cannot be guaranteed, default to no automatic retry
+```
+
 ---
 
 # 8. Versioned snapshot
@@ -409,6 +513,8 @@ class ToolMetadata(BaseModel):
 
     enabled: bool = True
     timeout_ms: int | None = None
+    deadline_ms: int | None = None
+    retry_policy: RetryPolicy | None = None
     cost_class: Literal["low", "medium", "high"] = "medium"
     latency_class: Literal["low", "medium", "high"] = "medium"
 ```
@@ -449,7 +555,7 @@ call is not duplicated
 call fits max tool count
 call fits latency/cost budget
 dataset is available
-timeout is assigned
+timeout/deadline policy is assigned
 ```
 
 Input:
@@ -472,6 +578,8 @@ class ValidatedToolCall(BaseModel):
     input: dict[str, Any]
     idempotency_key: str
     timeout_ms: int
+    deadline_ms: int | None = None
+    retry_policy: RetryPolicy | None = None
     validation_notes: list[str] = []
 ```
 
@@ -483,12 +591,28 @@ class ValidatedToolCall(BaseModel):
 
 `idempotency_key` should be passed to tool implementations and, for external APIs or write-side actuators, forwarded to the external system when supported.
 
+The validated call should include the effective timeout, deadline, and retry policy after global defaults and tool-specific overrides are resolved.
+
 Rejected calls should also be recorded:
 
 ```python
 class RejectedToolCall(BaseModel):
     tool_name: str
     reason: str
+```
+
+Tool results should preserve terminal failure information for merge, decision, audit, and evaluation:
+
+```python
+class ToolResult(BaseModel):
+    tool_call_id: str
+    tool_name: str
+    status: Literal["succeeded", "failed", "timed_out", "skipped"]
+    output_ref: str | None = None
+    error_ref: str | None = None
+    retryable: bool = False
+    attempt_count: int = 0
+    elapsed_ms: int | None = None
 ```
 
 This is useful for audit and evaluation:
@@ -531,6 +655,8 @@ Resume rule:
 for each validated tool call:
   if a child step_succeeded event exists for tool_call_id:
     reuse recorded tool result
+  elif a terminal failed/timed_out child step exists and retry policy is exhausted:
+    reuse recorded terminal failure result
   else:
     execute or retry that tool call according to policy
 ```
@@ -544,10 +670,22 @@ must have stable idempotency_key
 must record request and response artifacts
 should forward idempotency_key to the external system
 should require validation or human approval when policy says so
+should not automatically retry unless idempotency is guaranteed
 must not be blindly re-executed if prior success is recorded
 ```
 
 The parent `EXECUTE_TOOLS` step succeeds only after all required child tool-call steps have reached a terminal status and the merged `tool_results` state has been checkpointed. The parent output should reference the child step IDs rather than duplicating large result payloads.
+
+Parent failure behavior is configurable:
+
+```text
+required tool failed/timed_out and continue_on_failure = false
+→ parent EXECUTE_TOOLS fails
+
+optional tool failed/timed_out, or continue_on_failure = true
+→ parent EXECUTE_TOOLS succeeds with terminal ToolResult entries
+→ MERGE_RESULTS / DECIDE determines whether to answer, replan, ask user, or fail
+```
 
 ---
 
@@ -794,6 +932,7 @@ step_events
   sequence_index
   iteration_index
   step_type
+  attempt_index
   tool_call_id
   idempotency_key
   event_type
@@ -814,6 +953,7 @@ steps projection
   sequence_index
   iteration_index
   step_type
+  attempt_count
   tool_call_id
   idempotency_key
   status
