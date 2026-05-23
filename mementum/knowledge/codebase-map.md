@@ -75,6 +75,6 @@ Architectural boundaries:
 
 - Do not add `src/` or `src/common_llm` style layout unless the Polylith configuration changes.
 - Before changing LLM provider behavior, read the relevant provider tests and architecture decisions in project memory.
-- The custom durable agent runtime is implemented; read `mementum/knowledge/agent-runtime-framework-design.md` before extending it.
+- The custom durable agent runtime is implemented; read `mementum/knowledge/agent-runtime-framework-design.md` for current implementation context, then use `mementum/knowledge/replay-resume-agent-system-design.md` and `mementum/knowledge/replay-resume-agent-implementation-plan.md` as the current direction before extending it.
 - Use `prompts/` for reusable coding-agent workflows and `skills/mementum-memory/` for project-memory maintenance workflows.
 - Keep memory as an orientation map; use source files for detailed APIs.

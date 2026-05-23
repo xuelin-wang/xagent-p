@@ -18,11 +18,13 @@
 - Keep the runtime deterministic by default with fake planner/subagent/summary executors, and select provider-backed executors from model config when requested.
 - Keep tests deterministic by default; live provider tests are opt-in through the `require_env` marker.
 - Keep deployment secrets outside committed values files except disposable local `kind` overrides.
-- The next active feature slice is the highly configurable agentic app design under `mementum/knowledge/highly-configurable-agentic-app-implementation-design.md`, starting with config validation, enabled subagents, explicit unknown-subagent policy, prompt history, and timeout enforcement.
+- The next active feature slice is the replay/resume event-runtime design under `mementum/knowledge/replay-resume-agent-system-design.md`, implemented in stages from `mementum/knowledge/replay-resume-agent-implementation-plan.md`.
 
 ## Next Steps
 
-- Implement the highly configurable agentic app in the order recorded in `mementum/knowledge/highly-configurable-agentic-app-implementation-design.md`.
+- Implement `mementum/knowledge/replay-resume-agent-system-design.md` using the staged plan in `mementum/knowledge/replay-resume-agent-implementation-plan.md`.
+- Start with Stage 0/1 from the implementation plan: baseline orientation, then the general `RuntimeStep` / `StepResult` contract and planner adaptation.
+- Keep each stage aligned with the implementation plan's conformance checklist before moving to the next stage.
 
 ## Blockers / Unknowns
 
@@ -54,6 +56,8 @@
 - `mementum/knowledge/open-questions.md`
 - `mementum/knowledge/development-workflows.md`
 - `mementum/knowledge/agent-runtime-framework-design.md`
+- `mementum/knowledge/replay-resume-agent-system-design.md`
+- `mementum/knowledge/replay-resume-agent-implementation-plan.md`
 - `components/xagent/llm_config/settings.py`
 - `AGENTS.md`
 - `CLAUDE.md`

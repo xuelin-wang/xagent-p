@@ -17,3 +17,6 @@ Source pointers:
 Future implication:
 - Any later Postgres implementation must preserve step-level reconciliation, not just checkpoint replay.
 
+Synthesis:
+- Synthesized into `mementum/knowledge/replay-resume-agent-system-design.md` and `mementum/knowledge/replay-resume-agent-implementation-plan.md`.
+- The future design preserves this lesson through append-only `step_succeeded` events, checkpoint-aligned step completion, and durable child `tool_call` steps rather than checkpoint-only resume.
