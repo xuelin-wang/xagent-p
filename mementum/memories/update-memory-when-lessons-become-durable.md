@@ -2,6 +2,8 @@
 
 Symbol: 🔁
 
+Status: superseded
+
 When a lesson is likely to matter again, add or update project memory.
 
 Good examples:
@@ -20,3 +22,7 @@ Avoid:
 
 Future implication:
 - At the end of substantial work, consider whether `mementum/` should be updated.
+
+Superseded by:
+- `mementum/knowledge/project-memory-policy.md`
+- `skills/mementum-memory/SKILL.md`
