@@ -21,8 +21,8 @@ from xagent.agent_flow.models import (
 from xagent.agent_flow.planner import PlannerExecutor, PlannerStep
 from xagent.agent_flow.step_runner import StepRunner
 from xagent.agent_flow.steps import RetryPolicy, RuntimeContext, StepExecutionPolicy
-from xagent.agent_flow.subagents import FlowSubagent
-from xagent.agent_flow.summary import SummaryExecutor
+from xagent.agent_flow.subagents import FlowSubagent, SubagentStep
+from xagent.agent_flow.summary import SummaryExecutor, SummaryStep
 from xagent.agent_persistence.repositories import (
     CheckpointRecord,
     CheckpointRepository,
@@ -228,13 +228,23 @@ class AgentFlowRuntime:
             for selection in iteration.plan.selections
             if selection.name == subagent_name
         )
-        output_json = await self._step_runner.run_step(
+        subagent_step = SubagentStep(
+            subagent=self._subagents[subagent_name],
+            selection=selection,
+        )
+        context = RuntimeContext(
+            execution_policy=StepExecutionPolicy(
+                retry=RetryPolicy(
+                    max_attempts=self._config.subagents[subagent_name].max_attempts
+                ),
+            )
+        )
+        output_json = await self._step_runner.run_runtime_step(
             state=state,
             step_name=f"subagent:{subagent_name}",
-            step_type="subagent",
             input_json=selection.model_dump(mode="json"),
-            max_attempts=self._config.subagents[subagent_name].max_attempts,
-            fn=lambda _: self._invoke_subagent(state, subagent_name),
+            step=subagent_step,
+            context=context,
             on_success=lambda output_json: self._commit_subagent_success(
                 state,
                 output_json,
@@ -242,35 +252,21 @@ class AgentFlowRuntime:
         )
         return SubagentResult.model_validate(output_json)
 
-    async def _invoke_subagent(
-        self,
-        state: AgentFlowState,
-        subagent_name: str,
-    ) -> dict[str, Any]:
-        iteration = state.get_or_create_current_iteration()
-        if iteration.plan is None:
-            raise RuntimeError("Planner must run before subagents.")
-        selection = next(
-            selection
-            for selection in iteration.plan.selections
-            if selection.name == subagent_name
-        )
-        result = await self._subagents[subagent_name].ainvoke(
-            state=state,
-            selection=selection,
-        )
-        return result.model_dump(mode="json")
-
     async def _run_summary(
         self,
         state: AgentFlowState,
         iteration: AgentFlowIteration,
     ) -> None:
         state.current_stage = FlowStage.SUMMARIZING
-        output_json = await self._step_runner.run_step(
+        summary_step = SummaryStep(executor=self._summary, iteration=iteration)
+        context = RuntimeContext(
+            execution_policy=StepExecutionPolicy(
+                retry=RetryPolicy(max_attempts=self._config.summary.max_attempts),
+            )
+        )
+        output_json = await self._step_runner.run_runtime_step(
             state=state,
             step_name="summary",
-            step_type="summary",
             input_json={
                 "query": state.user_query,
                 "subagent_results": {
@@ -278,8 +274,8 @@ class AgentFlowRuntime:
                     for name, result in iteration.subagent_results.items()
                 },
             },
-            max_attempts=self._config.summary.max_attempts,
-            fn=lambda _: self._summarize_step(state, iteration),
+            step=summary_step,
+            context=context,
             on_success=lambda output_json: self._commit_summary_success(
                 state,
                 iteration,
@@ -287,14 +283,6 @@ class AgentFlowRuntime:
             ),
         )
         iteration.summary = SummaryOutput.model_validate(output_json)
-
-    async def _summarize_step(
-        self,
-        state: AgentFlowState,
-        iteration: AgentFlowIteration,
-    ) -> dict[str, Any]:
-        summary = await self._summary.summarize(state=state, iteration=iteration)
-        return summary.model_dump(mode="json")
 
     async def _complete_state(
         self,

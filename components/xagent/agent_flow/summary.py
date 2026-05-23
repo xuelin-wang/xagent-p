@@ -10,6 +10,7 @@ from xagent.agent_flow.models import (
     SummaryDecision,
     SummaryOutput,
 )
+from xagent.agent_flow.steps import RuntimeContext, StepResult
 
 
 class SummaryExecutor(Protocol):
@@ -19,6 +20,28 @@ class SummaryExecutor(Protocol):
         state: AgentFlowState,
         iteration: AgentFlowIteration,
     ) -> SummaryOutput: ...
+
+
+class SummaryStep:
+    """RuntimeStep adapter for summary executors."""
+
+    step_type = "summary"
+
+    def __init__(self, *, executor: SummaryExecutor, iteration: AgentFlowIteration):
+        self._executor = executor
+        self._iteration = iteration
+
+    async def run(
+        self,
+        state: AgentFlowState,
+        context: RuntimeContext,
+    ) -> StepResult:
+        _ = context
+        summary = await self._executor.summarize(
+            state=state,
+            iteration=self._iteration,
+        )
+        return StepResult(output_json=summary.model_dump(mode="json"))
 
 
 class FakeSummaryExecutor:

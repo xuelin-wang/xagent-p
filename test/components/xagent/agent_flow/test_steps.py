@@ -1,6 +1,10 @@
 import asyncio
 
-from xagent.agent_flow.models import AgentFlowState
+from xagent.agent_flow.models import (
+    AgentFlowState,
+    PlanSubagentSelection,
+    SummaryDecision,
+)
 from xagent.agent_flow.planner import FakePlannerExecutor, PlannerStep
 from xagent.agent_flow.step_runner import StepRunner
 from xagent.agent_flow.steps import (
@@ -9,6 +13,8 @@ from xagent.agent_flow.steps import (
     RuntimeExecutionPolicy,
     StepExecutionPolicy,
 )
+from xagent.agent_flow.subagents import FakeFlowSubagent, SubagentStep
+from xagent.agent_flow.summary import FakeSummaryExecutor, SummaryStep
 from xagent.agent_persistence.memory import InMemoryStepRepository
 
 from .test_executors import _subagent_configs
@@ -125,3 +131,37 @@ async def _step_runner_runs_runtime_step_with_policy_attempts() -> None:
     assert result["selections"][0]["name"] == "manuals"
     assert steps[0].step_type == "planner"
     assert steps[0].max_attempts == 3
+
+
+def test_subagent_step_matches_executor_output() -> None:
+    asyncio.run(_subagent_step_matches_executor_output())
+
+
+async def _subagent_step_matches_executor_output() -> None:
+    state = AgentFlowState(run_id="run_1", user_query="diagnose no start")
+    selection = PlanSubagentSelection(name="manuals")
+    subagent = FakeFlowSubagent(name="manuals")
+    step = SubagentStep(subagent=subagent, selection=selection)
+
+    result = await step.run(state=state, context=RuntimeContext())
+
+    assert result.output_json == (
+        await subagent.ainvoke(state=state, selection=selection)
+    ).model_dump(mode="json")
+
+
+def test_summary_step_matches_executor_output() -> None:
+    asyncio.run(_summary_step_matches_executor_output())
+
+
+async def _summary_step_matches_executor_output() -> None:
+    state = AgentFlowState(run_id="run_1", user_query="diagnose no start")
+    iteration = state.get_or_create_current_iteration()
+    executor = FakeSummaryExecutor(decision=SummaryDecision.FINAL)
+    step = SummaryStep(executor=executor, iteration=iteration)
+
+    result = await step.run(state=state, context=RuntimeContext())
+
+    assert result.output_json == (
+        await executor.summarize(state=state, iteration=iteration)
+    ).model_dump(mode="json")
