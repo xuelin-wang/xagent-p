@@ -6,9 +6,14 @@ from typing import Any
 from xagent.agent_flow.errors import NonRetryableStepError, StepRunnerError
 from xagent.agent_flow.models import AgentFlowState, StepStatus
 from xagent.agent_flow.steps import RuntimeContext, RuntimeStep
-from xagent.agent_persistence.repositories import StepRecord, StepRepository
+from xagent.agent_persistence.repositories import (
+    CheckpointRecord,
+    StepRecord,
+    StepRepository,
+)
 
 StepFunction = Callable[[StepRecord], Awaitable[dict[str, Any]]]
+StepSuccessCommit = Callable[[dict[str, Any]], Awaitable[CheckpointRecord | None]]
 
 
 class StepRunner:
@@ -23,6 +28,7 @@ class StepRunner:
         input_json: dict[str, Any],
         step: RuntimeStep,
         context: RuntimeContext,
+        on_success: StepSuccessCommit | None = None,
     ) -> dict[str, Any]:
         """Run a RuntimeStep through the existing durable step machinery."""
 
@@ -37,6 +43,7 @@ class StepRunner:
                 state=state,
                 context=context,
             ),
+            on_success=on_success,
         )
 
     async def run_step(
@@ -48,6 +55,7 @@ class StepRunner:
         input_json: dict[str, Any],
         max_attempts: int,
         fn: StepFunction,
+        on_success: StepSuccessCommit | None = None,
     ) -> dict[str, Any]:
         attempts = max(max_attempts, 1)
         step = await self._step_repository.create_or_get_step(
@@ -111,6 +119,10 @@ class StepRunner:
             await self._step_repository.mark_step_succeeded(
                 current_step.step_id,
                 output_json,
+                checkpoint_id=await self._checkpoint_id_from_success_commit(
+                    output_json,
+                    on_success,
+                ),
             )
             return output_json
 
@@ -140,3 +152,15 @@ class StepRunner:
     ) -> dict[str, Any]:
         result = await step.run(state=state, context=context)
         return result.output_json
+
+    async def _checkpoint_id_from_success_commit(
+        self,
+        output_json: dict[str, Any],
+        on_success: StepSuccessCommit | None,
+    ) -> str | None:
+        if on_success is None:
+            return None
+        checkpoint = await on_success(output_json)
+        if checkpoint is None:
+            return None
+        return checkpoint.checkpoint_id

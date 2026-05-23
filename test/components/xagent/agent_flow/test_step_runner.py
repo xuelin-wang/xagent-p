@@ -7,7 +7,11 @@ from xagent.agent_flow.errors import NonRetryableStepError, StepRunnerError
 from xagent.agent_flow.models import AgentFlowState, StepStatus
 from xagent.agent_flow.step_runner import StepRunner
 from xagent.agent_persistence.memory import InMemoryStepRepository
-from xagent.agent_persistence.repositories import StepEventType, StepRecord
+from xagent.agent_persistence.repositories import (
+    CheckpointRecord,
+    StepEventType,
+    StepRecord,
+)
 
 
 def test_step_runner_persists_success_and_skips_succeeded_step() -> None:
@@ -62,6 +66,47 @@ async def _step_runner_persists_success_and_skips_succeeded_step() -> None:
 
     rebuilt = await repository.rebuild_step_projection()
     assert rebuilt == steps
+
+
+def test_step_runner_records_success_checkpoint_id() -> None:
+    asyncio.run(_step_runner_records_success_checkpoint_id())
+
+
+async def _step_runner_records_success_checkpoint_id() -> None:
+    repository = InMemoryStepRepository()
+    runner = StepRunner(repository)
+    state = AgentFlowState(run_id="run_1", user_query="diagnose no start")
+
+    async def fn(_: StepRecord) -> dict[str, Any]:
+        return {"answer": "inspect battery"}
+
+    async def commit(_: dict[str, Any]) -> CheckpointRecord:
+        return CheckpointRecord(
+            checkpoint_id="checkpoint_1",
+            run_id=state.run_id,
+            iteration=state.current_iteration,
+            checkpoint_name="planner",
+            stage=str(state.current_stage),
+            state=state,
+            sequence=1,
+        )
+
+    await runner.run_step(
+        state=state,
+        step_name="planner",
+        step_type="planner",
+        input_json={"query": state.user_query},
+        max_attempts=1,
+        fn=fn,
+        on_success=commit,
+    )
+
+    steps = await repository.get_steps_for_run_iteration("run_1", 0)
+    assert steps[0].checkpoint_id == "checkpoint_1"
+
+    events = await repository.get_step_events_for_step(steps[0].step_id)
+    assert events[-1].event_type is StepEventType.SUCCEEDED
+    assert events[-1].checkpoint_id == "checkpoint_1"
 
 
 def test_step_runner_retries_failures_until_success() -> None:

@@ -125,6 +125,7 @@ class InMemoryStepRepository:
         self,
         step_id: str,
         output_json: dict[str, Any],
+        checkpoint_id: str | None = None,
     ) -> StepRecord:
         step = self._get_step(step_id)
         updated = step.model_copy(
@@ -132,6 +133,7 @@ class InMemoryStepRepository:
                 "status": StepStatus.SUCCEEDED,
                 "output_json": output_json.copy(),
                 "error_json": None,
+                "checkpoint_id": checkpoint_id,
             },
             deep=True,
         )
@@ -246,6 +248,7 @@ class InMemoryStepRepository:
             if step.output_json is not None
             else None,
             error_json=step.error_json.copy() if step.error_json is not None else None,
+            checkpoint_id=step.checkpoint_id,
             max_attempts=step.max_attempts,
             idempotency_key=step.idempotency_key,
         )
@@ -301,6 +304,7 @@ class InMemoryStepRepository:
                             else current.error_json
                         )
                     ),
+                    "checkpoint_id": event.checkpoint_id or current.checkpoint_id,
                     "attempt_count": max(current.attempt_count, event.attempt_index),
                     "max_attempts": event.max_attempts,
                     "idempotency_key": event.idempotency_key,
@@ -313,6 +317,7 @@ class InMemoryStepRepository:
 class InMemoryCheckpointRepository:
     def __init__(self) -> None:
         self._checkpoints: list[CheckpointRecord] = []
+        self._checkpoints_by_id: dict[str, CheckpointRecord] = {}
         self._sequence = 0
 
     async def save_checkpoint(
@@ -335,6 +340,7 @@ class InMemoryCheckpointRepository:
             sequence=self._sequence,
         )
         self._checkpoints.append(checkpoint)
+        self._checkpoints_by_id[checkpoint.checkpoint_id] = checkpoint
         return checkpoint.model_copy(deep=True)
 
     async def get_latest_checkpoint(self, run_id: str) -> AgentFlowState | None:
@@ -347,3 +353,9 @@ class InMemoryCheckpointRepository:
             return None
         latest = max(matching, key=lambda checkpoint: checkpoint.sequence)
         return latest.state.model_copy(deep=True)
+
+    async def get_checkpoint(self, checkpoint_id: str) -> CheckpointRecord | None:
+        checkpoint = self._checkpoints_by_id.get(checkpoint_id)
+        if checkpoint is None:
+            return None
+        return checkpoint.model_copy(deep=True)

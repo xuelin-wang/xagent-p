@@ -60,6 +60,7 @@ class StepRecord(BaseModel):
     attempt_count: int = 0
     max_attempts: int = 1
     idempotency_key: str
+    checkpoint_id: str | None = None
 
 
 class CheckpointRecord(BaseModel):
@@ -103,6 +104,7 @@ class StepRepository(Protocol):
         self,
         step_id: str,
         output_json: dict[str, Any],
+        checkpoint_id: str | None = None,
     ) -> StepRecord: ...
 
     async def mark_step_failed(
@@ -140,3 +142,5 @@ class CheckpointRepository(Protocol):
     ) -> CheckpointRecord: ...
 
     async def get_latest_checkpoint(self, run_id: str) -> AgentFlowState | None: ...
+
+    async def get_checkpoint(self, checkpoint_id: str) -> CheckpointRecord | None: ...

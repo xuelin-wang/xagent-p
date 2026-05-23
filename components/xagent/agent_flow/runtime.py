@@ -24,6 +24,7 @@ from xagent.agent_flow.steps import RetryPolicy, RuntimeContext, StepExecutionPo
 from xagent.agent_flow.subagents import FlowSubagent
 from xagent.agent_flow.summary import SummaryExecutor
 from xagent.agent_persistence.repositories import (
+    CheckpointRecord,
     CheckpointRepository,
     RunRepository,
     StepRecord,
@@ -51,11 +52,13 @@ class AgentFlowRuntime:
         self._subagents = dict(subagents)
         self._summary = summary
         self._step_runner = StepRunner(step_repository)
+        self._state_commit_lock = asyncio.Lock()
 
     async def run(self, state: AgentFlowState) -> AgentFlowState:
         return await self._run_loop(state, create_run=True)
 
     async def resume(self, state: AgentFlowState) -> AgentFlowState:
+        state = await self._state_from_latest_succeeded_event(state)
         if state.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
             return state
         await self._reconcile_succeeded_steps(state)
@@ -169,9 +172,13 @@ class AgentFlowRuntime:
             },
             step=planner_step,
             context=context,
+            on_success=lambda output_json: self._commit_planner_success(
+                state,
+                iteration,
+                output_json,
+            ),
         )
         iteration.plan = PlanOutput.model_validate(output_json)
-        await self._save_state(state, checkpoint_name="planner")
 
     async def _run_subagents(
         self,
@@ -198,7 +205,7 @@ class AgentFlowRuntime:
 
         for result in results:
             iteration.subagent_results[result.name] = result
-            if result.error is not None:
+            if result.error is not None and result.error not in iteration.errors:
                 iteration.errors.append(result.error)
 
         failed_results = [result for result in results if result.status == "error"]
@@ -228,6 +235,10 @@ class AgentFlowRuntime:
             input_json=selection.model_dump(mode="json"),
             max_attempts=self._config.subagents[subagent_name].max_attempts,
             fn=lambda _: self._invoke_subagent(state, subagent_name),
+            on_success=lambda output_json: self._commit_subagent_success(
+                state,
+                output_json,
+            ),
         )
         return SubagentResult.model_validate(output_json)
 
@@ -269,9 +280,13 @@ class AgentFlowRuntime:
             },
             max_attempts=self._config.summary.max_attempts,
             fn=lambda _: self._summarize_step(state, iteration),
+            on_success=lambda output_json: self._commit_summary_success(
+                state,
+                iteration,
+                output_json,
+            ),
         )
         iteration.summary = SummaryOutput.model_validate(output_json)
-        await self._save_state(state, checkpoint_name="summary")
 
     async def _summarize_step(
         self,
@@ -324,15 +339,68 @@ class AgentFlowRuntime:
         state: AgentFlowState,
         *,
         checkpoint_name: str,
-    ) -> None:
+    ) -> CheckpointRecord:
         await self._run_repository.update_run_state(state)
-        await self._checkpoint_repository.save_checkpoint(
+        return await self._checkpoint_repository.save_checkpoint(
             run_id=state.run_id,
             iteration=state.current_iteration,
             checkpoint_name=checkpoint_name,
             stage=state.current_stage,
             state=state,
         )
+
+    async def _commit_planner_success(
+        self,
+        state: AgentFlowState,
+        iteration: AgentFlowIteration,
+        output_json: dict[str, Any],
+    ) -> CheckpointRecord:
+        async with self._state_commit_lock:
+            iteration.plan = PlanOutput.model_validate(output_json)
+            return await self._save_state(state, checkpoint_name="planner")
+
+    async def _commit_subagent_success(
+        self,
+        state: AgentFlowState,
+        output_json: dict[str, Any],
+    ) -> CheckpointRecord:
+        async with self._state_commit_lock:
+            result = SubagentResult.model_validate(output_json)
+            iteration = state.get_or_create_current_iteration()
+            iteration.subagent_results[result.name] = result
+            if result.error is not None and result.error not in iteration.errors:
+                iteration.errors.append(result.error)
+            return await self._save_state(
+                state,
+                checkpoint_name=f"subagent:{result.name}",
+            )
+
+    async def _commit_summary_success(
+        self,
+        state: AgentFlowState,
+        iteration: AgentFlowIteration,
+        output_json: dict[str, Any],
+    ) -> CheckpointRecord:
+        async with self._state_commit_lock:
+            iteration.summary = SummaryOutput.model_validate(output_json)
+            return await self._save_state(state, checkpoint_name="summary")
+
+    async def _state_from_latest_succeeded_event(
+        self,
+        fallback_state: AgentFlowState,
+    ) -> AgentFlowState:
+        latest_success = await self._step_repository.get_latest_succeeded_event(
+            fallback_state.run_id
+        )
+        if latest_success is None or latest_success.checkpoint_id is None:
+            return fallback_state
+
+        checkpoint = await self._checkpoint_repository.get_checkpoint(
+            latest_success.checkpoint_id
+        )
+        if checkpoint is None:
+            return fallback_state
+        return checkpoint.state
 
     async def _reconcile_succeeded_steps(self, state: AgentFlowState) -> None:
         steps = await self._step_repository.get_steps_for_run_iteration(
