@@ -198,3 +198,37 @@ Source pointers:
 - `components/xagent/llm_config/auth.py`
 - `components/xagent/llm_registry/factory.py`
 - `bases/xagent/llm_cli/main.py`
+
+## 2026-05-23 - Evolve Agent Flow Toward Replay/Resume Event Runtime
+
+Status: accepted
+
+Decision:
+- Evolve the existing durable `agent_flow` runtime toward a minimal replay/resume architecture instead of creating a parallel runtime package.
+- Keep the generic runtime core limited to a fixed state machine, generic step execution, append-only step events, checkpoint-aligned completion, snapshots, artifacts, projections, and execution policy.
+- Model planner, tool calls, merge, decision, ask-user, and response behavior as specialized `RuntimeStep` implementations or recorded-data consumers.
+- Treat append-only `StepEvent` records as the durable source of truth, with `StepRecord`/step tables as rebuildable projections.
+- Consider a step complete only when its state-after checkpoint and `step_succeeded` event are committed as one logical unit.
+- Execute each validated tool call as a durable child `tool_call` step with stable `tool_call_id` and `idempotency_key`.
+- Represent waiting for external user input as an explicit `waiting_for_user` run status plus append-only `UserInputEvent` records.
+- Resolve timeout, deadline, retry, and continue-on-failure behavior through global execution policy plus optional per-step/tool overrides.
+
+Rationale:
+- Audit, replay, pause/resume, and evaluation should fall out of the same records rather than become separate subsystems.
+- Append-only events preserve a true audit trail while projections keep runtime reads efficient.
+- Checkpoint-aligned step success removes the old ambiguity where checkpoints could lag completed step rows after a crash.
+- Per-call tool durability prevents duplicate work after partial tool execution, especially for side-effecting actuators.
+- Keeping implementation under existing `components/xagent/agent_flow/` and `components/xagent/agent_persistence/` preserves the repo's Polylith ownership boundaries.
+
+Implications:
+- Future agent-flow work should follow `mementum/knowledge/replay-resume-agent-implementation-plan.md` and its conformance checklist.
+- New runtime code should extend the existing `agent_flow` and `agent_persistence` components rather than introducing a generic graph engine or parallel package.
+- Replay and evaluation should consume recorded runs, events, checkpoints, artifacts, snapshots, and user input events without rerunning nondeterministic steps.
+- Write-side actuator retries require idempotency support or explicit policy approval.
+
+Source pointers:
+- `mementum/knowledge/replay-resume-agent-system-design.md`
+- `mementum/knowledge/replay-resume-agent-implementation-plan.md`
+- `mementum/memories/agent-flow-resume-reconciles-succeeded-steps.md`
+- `components/xagent/agent_flow/runtime.py`
+- `components/xagent/agent_persistence/repositories.py`

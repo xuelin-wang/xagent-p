@@ -32,6 +32,19 @@ Record rules that should remain true unless an explicit design change updates co
 - Normal pytest runs must exclude live provider tests unless explicitly requested with `require_env`.
 - Project memory under `mementum/` must not contain secrets, runtime records, logs, or private data.
 
+## Agent-Flow Replay/Resume Invariants
+
+- Agent-flow runtime evolution must extend `components/xagent/agent_flow/` and `components/xagent/agent_persistence/`; do not create a competing runtime or graph package.
+- Generic agent-flow runtime code should stay limited to orchestration, step execution, events, checkpoints, snapshots, artifacts, projections, and execution policy.
+- Planner, tool-call, merge, decision, ask-user, and response behavior should live in specialized steps or recorded-data consumers, not hard-coded runtime branches.
+- Append-only `StepEvent` records are the durable source of truth; `StepRecord` or step tables are projections and must be rebuildable.
+- A step is complete only when its state-after checkpoint and `step_succeeded` event are committed as one logical unit.
+- Resume must use recorded successful step/tool-call events and must not rerun completed nondeterministic work unless explicitly requested.
+- Each validated tool call must have a stable `tool_call_id` and `idempotency_key`, and should execute as a durable child `tool_call` step.
+- Write-side actuator retries require idempotency support or explicit policy approval.
+- Per-attempt timeout, total deadline, retry, and continue-on-failure behavior must be explicit in execution policy and covered by deterministic tests.
+- Waiting for user input should use an explicit `waiting_for_user` status and append-only user input records, not terminal response state.
+
 ## Source Pointers
 
 - `workspace.toml`
@@ -44,6 +57,8 @@ Record rules that should remain true unless an explicit design change updates co
 - `components/xagent/llm_provider_openai/provider.py`
 - `components/xagent/llm_provider_anthropic/provider.py`
 - `components/xagent/config/strict.py`
+- `mementum/knowledge/replay-resume-agent-system-design.md`
+- `mementum/knowledge/replay-resume-agent-implementation-plan.md`
 - `test/components/xagent/llm_provider_openai/`
 - `test/components/xagent/llm_provider_anthropic/`
 
