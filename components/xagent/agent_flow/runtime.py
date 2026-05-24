@@ -265,9 +265,7 @@ class AgentFlowRuntime:
     ) -> AgentFlowState:
         """Resume a waiting_for_user run by attaching a user input event."""
         if state.status is not RunStatus.WAITING_FOR_USER:
-            raise ValueError(
-                f"Expected waiting_for_user status, got: {state.status}"
-            )
+            raise ValueError(f"Expected waiting_for_user status, got: {state.status}")
         if state.pending_user_request is None:
             raise ValueError("No pending user request found in state")
 
