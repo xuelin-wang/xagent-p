@@ -203,7 +203,12 @@ class AgentFlowRuntime:
         )
 
         result = await self._step_runner.execute_composite(
-            workflow_step, state, RuntimeContext()
+            workflow_step,
+            state,
+            RuntimeContext.from_runtime_policy(
+                self._config.execution_policy,
+                step_type=workflow_step.step_type,
+            ),
         )
         state_after = result.state_after if result.state_after is not None else state
         await self._save_state(state_after, checkpoint_name="iteration")

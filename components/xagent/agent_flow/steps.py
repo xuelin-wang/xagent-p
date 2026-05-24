@@ -19,10 +19,10 @@ from xagent.config import StrictConfigModel
 
 
 class RetryPolicy(StrictConfigModel):
-    max_attempts: int = 1
-    backoff_initial_ms: int = 0
-    backoff_max_ms: int | None = None
-    backoff_multiplier: float = 1.0
+    max_attempts: int = Field(default=1, ge=1)
+    backoff_initial_ms: int = Field(default=0, ge=0)
+    backoff_max_ms: int | None = Field(default=None, ge=0)
+    backoff_multiplier: float = Field(default=1.0, ge=0)
     retryable_error_types: list[str] = Field(default_factory=list)
 
     def merge(self, override: RetryPolicy) -> RetryPolicy:
@@ -36,8 +36,8 @@ class RetryPolicy(StrictConfigModel):
 
 
 class StepExecutionPolicy(StrictConfigModel):
-    timeout_ms: int | None = None
-    deadline_ms: int | None = None
+    timeout_ms: int | None = Field(default=None, ge=0)
+    deadline_ms: int | None = Field(default=None, ge=0)
     retry: RetryPolicy = Field(default_factory=RetryPolicy)
     continue_on_failure: bool = False
 
@@ -66,6 +66,37 @@ class RuntimeExecutionPolicy(StrictConfigModel):
 
 class RuntimeContext(StrictConfigModel):
     execution_policy: StepExecutionPolicy = Field(default_factory=StepExecutionPolicy)
+    runtime_policy: RuntimeExecutionPolicy | None = None
+
+    @classmethod
+    def from_runtime_policy(
+        cls,
+        runtime_policy: RuntimeExecutionPolicy,
+        *,
+        step_type: str,
+    ) -> RuntimeContext:
+        return cls(
+            execution_policy=runtime_policy.policy_for(step_type),
+            runtime_policy=runtime_policy,
+        )
+
+    def for_child(
+        self,
+        *,
+        step_type: str,
+        override: RuntimeContext | None = None,
+    ) -> RuntimeContext:
+        policy = self.execution_policy.model_copy(deep=True)
+        if self.runtime_policy is not None:
+            step_override = self.runtime_policy.step_overrides.get(step_type)
+            if step_override is not None:
+                policy = policy.merge(step_override)
+        if override is not None:
+            policy = policy.merge(override.execution_policy)
+        return RuntimeContext(
+            execution_policy=policy,
+            runtime_policy=self.runtime_policy,
+        )
 
 
 class StepResult(StrictConfigModel):

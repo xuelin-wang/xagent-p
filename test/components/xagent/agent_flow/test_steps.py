@@ -74,6 +74,49 @@ def test_runtime_execution_policy_merges_step_override() -> None:
     )
 
 
+def test_runtime_context_child_inherits_parent_and_merges_override() -> None:
+    parent = RuntimeContext(
+        execution_policy=StepExecutionPolicy(
+            timeout_ms=1_000,
+            deadline_ms=5_000,
+            retry=RetryPolicy(max_attempts=2, backoff_initial_ms=100),
+        )
+    )
+    child_override = RuntimeContext(
+        execution_policy=StepExecutionPolicy(
+            retry=RetryPolicy(max_attempts=4),
+        )
+    )
+
+    effective = parent.for_child(step_type="planner", override=child_override)
+
+    assert effective.execution_policy == StepExecutionPolicy(
+        timeout_ms=1_000,
+        deadline_ms=5_000,
+        retry=RetryPolicy(max_attempts=4, backoff_initial_ms=100),
+    )
+
+
+def test_runtime_context_child_applies_runtime_step_override() -> None:
+    runtime_policy = RuntimeExecutionPolicy(
+        default_step_policy=StepExecutionPolicy(timeout_ms=1_000),
+        step_overrides={
+            "planner": StepExecutionPolicy(deadline_ms=5_000),
+        },
+    )
+    parent = RuntimeContext.from_runtime_policy(
+        runtime_policy,
+        step_type="sequence:iteration",
+    )
+
+    effective = parent.for_child(step_type="planner")
+
+    assert effective.execution_policy == StepExecutionPolicy(
+        timeout_ms=1_000,
+        deadline_ms=5_000,
+    )
+
+
 def test_planner_step_matches_executor_output() -> None:
     asyncio.run(_planner_step_matches_executor_output())
 

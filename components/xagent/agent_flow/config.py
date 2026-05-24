@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from xagent.agent_flow.steps import RuntimeExecutionPolicy
 from xagent.config import StrictConfigModel
 
 
@@ -55,6 +56,9 @@ class PersistenceConfig(StrictConfigModel):
 
 class AgentFlowAppConfig(StrictConfigModel):
     workflow: AgentWorkflowConfig = Field(default_factory=AgentWorkflowConfig)
+    execution_policy: RuntimeExecutionPolicy = Field(
+        default_factory=RuntimeExecutionPolicy
+    )
     planner: PlannerConfig = Field(default_factory=PlannerConfig)
     summary: SummaryConfig = Field(default_factory=SummaryConfig)
     subagents: dict[str, SubagentConfig] = Field(default_factory=dict)
