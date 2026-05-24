@@ -1,5 +1,9 @@
+import os
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from langchain_openai import ChatOpenAI
 from openai import AuthenticationError
 from pydantic import BaseModel, Field, SecretStr
@@ -90,7 +94,9 @@ def _build_runtime(config: ApiHttpConfig) -> LangChainMultiAgentApp:
 
 def create_app(config: ApiHttpConfig | None = None) -> FastAPI:
     if config is None:
-        config, _ = load_runtime_config(ApiHttpConfig, [])
+        env_cfg = os.environ.get("XAGENT_API_HTTP_CONFIG")
+        argv = ["--config", env_cfg] if env_cfg else []
+        config, _ = load_runtime_config(ApiHttpConfig, argv)
     app = FastAPI(title="xagent LangChain Service", version="0.1.0")
     if config.fastapi.cors.allow_origins:
         app.add_middleware(
@@ -121,6 +127,11 @@ def create_app(config: ApiHttpConfig | None = None) -> FastAPI:
     app.include_router(
         create_agent_flow_router(AgentFlowService.in_memory(config.agent_flow))
     )
+
+    _demo_dir = Path(__file__).parent / "static" / "demo"
+    if _demo_dir.exists():
+        app.mount("/demo", StaticFiles(directory=_demo_dir, html=True), name="demo")
+
     return app
 
 

@@ -20,6 +20,7 @@
 - Keep tests deterministic by default; live provider tests are opt-in through the `require_env` marker.
 - Keep deployment secrets outside committed values files except disposable local `kind` overrides.
 - The replay/resume implementation is complete. The next decision is which gap to address: real tool execution, timeout enforcement, or evaluation quality metrics (see open questions).
+- A React + Vite demo UI (`bases/xagent/demo_ui/`) is implemented for visualising agent-flow runs: flow chart, audit log (append-only), state JSON, step detail panel, and resume-point markers.
 
 ## Next Steps
 
@@ -50,6 +51,10 @@
 - `evaluation.py` produces only structural metrics (counts, flags, decision sequences, failure modes); LLM-graded content quality scoring is deferred pending ground-truth dataset or judge design.
 - `replay.py` audit playback reads from repositories without executing any step logic; `replay_from_steps` wraps `derive_state` and is the canonical way to reconstruct state from recorded steps.
 - `StepRunner` rename to `StepExecutor` deferred — churn across tests and runtime is too high relative to current value; revisit when the public surface stabilises.
+- Demo UI added at `bases/xagent/demo_ui/` as a Vite + React 18 + Tailwind v3 base; built output deploys to `bases/xagent/api_http/static/demo/` (gitignored) and served as a FastAPI static mount at `/demo`.
+- `XAGENT_API_HTTP_CONFIG` env var wired into `create_app()`: when set, its value is passed as `--config` to `load_runtime_config`, enabling config file selection without touching CLI argv (needed for `uvicorn` direct start).
+- Dev config at `development/config/api-http.dev.yaml` enables fake executors, CORS for `http://localhost:5173`, and two named fake subagents (`manuals`, `repair_history`) for demo purposes.
+- Two new HTTP endpoints added to `routes_agent_flow.py`: `GET /agent-flow/runs` (list all runs) and `GET /agent-flow/runs/{run_id}/audit` (fetch `RunAuditRecord`).
 
 ## Source Pointers
 
@@ -69,3 +74,6 @@
 - `CLAUDE.md`
 - `prompts/README.md`
 - `skills/mementum-memory/SKILL.md`
+- `bases/xagent/demo_ui/`
+- `development/config/api-http.dev.yaml`
+- `mementum/knowledge/demo-ui-design.md`

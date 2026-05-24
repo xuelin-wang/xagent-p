@@ -11,3 +11,6 @@ wheels/
 
 # Notebook autosave state
 **/.ipynb_checkpoints/
+
+# Demo UI build output
+bases/xagent/api_http/static/demo/

@@ -28,6 +28,7 @@ High-value areas:
 - `development/notebooks/`: local exploration notebooks.
 - `prompts/`: reusable coding-agent workflow and review prompts.
 - `skills/mementum-memory/`: repo-local skill for project-memory maintenance workflows.
+- `bases/xagent/demo_ui/`: Vite + React 18 + Tailwind v3 demo UI for visualising agent-flow runs; build output deploys to `bases/xagent/api_http/static/demo/`.
 
 Important entry points:
 
@@ -46,7 +47,7 @@ Architectural boundaries:
 - Provider components map common contracts to provider-specific APIs and preserve raw responses.
 - `components/xagent/agent_flow/` now owns the durable runtime surface: state/config/models, step runner, resume reconciliation, LLM adapter, planner/subagent/summary executors, the service facade, `replay.py` (audit playback via `build_audit_record`), and `evaluation.py` (structural run scoring via `evaluate_state`/`evaluate_run`). The `waiting_for_user` flow is handled through `submit_user_input` on the service.
 - `components/xagent/agent_persistence/` owns the runtime repositories used by the durable runtime.
-- `bases/xagent/api_http/` now exposes both the legacy `/query` surface and the new `/agent-flow/*` routes.
+- `bases/xagent/api_http/` now exposes both the legacy `/query` surface and the new `/agent-flow/*` routes (including `GET /agent-flow/runs` and `GET /agent-flow/runs/{run_id}/audit`).
 
 ## Generated or Do-Not-Edit Areas
 
@@ -70,6 +71,8 @@ Architectural boundaries:
 - `prompts/README.md`
 - `skills/mementum-memory/SKILL.md`
 - `mementum/knowledge/agent-runtime-framework-design.md`
+- `bases/xagent/demo_ui/`
+- `mementum/knowledge/demo-ui-design.md`
 
 ## Notes for Future Agents
 

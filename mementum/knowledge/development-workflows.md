@@ -69,6 +69,28 @@ Run the custom agent-flow CLI with the local deterministic config:
 uv run --active xagent-agent-flow --config development/config/agent-flow.local.yaml run "diagnose intermittent no-start"
 ```
 
+Run the demo UI in development (two terminals):
+
+```bash
+# Terminal 1 — backend (fake executors, CORS allowed for Vite dev server)
+XAGENT_API_HTTP_CONFIG=development/config/api-http.dev.yaml \
+  uv run --active uvicorn xagent.api_http.app:app --reload --port 8000
+
+# Terminal 2 — Vite dev server (proxies /agent-flow/* to localhost:8000)
+cd bases/xagent/demo_ui
+npm install   # first time only
+npm run dev   # opens http://localhost:5173
+```
+
+Build the demo UI for production (embeds into the FastAPI static mount at `/demo`):
+
+```bash
+cd bases/xagent/demo_ui
+npm run build
+# Output goes to dist/, which must be copied to
+# bases/xagent/api_http/static/demo/
+```
+
 Build the deployable service image:
 
 ```bash
@@ -113,3 +135,6 @@ ln -s ../../skills/mementum-memory .claude/skills/mementum-memory
 - `README.md`
 - `skills/mementum-memory/SKILL.md`
 - `.github/workflows/ci.yml`
+- `bases/xagent/demo_ui/`
+- `development/config/api-http.dev.yaml`
+- `mementum/knowledge/demo-ui-design.md`

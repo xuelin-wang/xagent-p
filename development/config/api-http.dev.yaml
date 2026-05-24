@@ -1,0 +1,20 @@
+fastapi:
+  cors:
+    allow_origins:
+      - "http://localhost:5173"
+
+agent_flow:
+  subagents:
+    manuals:
+      name: manuals
+      description: Search service manuals and procedures.
+      prompt_template: prompts/agent_flow/subagents/manuals.md
+    repair_history:
+      name: repair_history
+      description: Search prior repair history for similar symptoms.
+      prompt_template: prompts/agent_flow/subagents/repair_history.md
+  models:
+    default_reasoning:
+      provider: fake
+      model: fake-reasoning
+      temperature: 0.0
