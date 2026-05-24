@@ -99,7 +99,7 @@ class SequenceStepGroup:
 
     step_type: str
     step_name: str
-    children: list = dc_field(default_factory=list)
+    children: list[Any] = dc_field(default_factory=list)
 
 
 @dataclass

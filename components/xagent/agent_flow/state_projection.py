@@ -43,8 +43,8 @@ def _apply(
     elif step_name == "summary":
         iteration.summary = SummaryOutput.model_validate(output_json)
     elif step_name.startswith("tool_call:"):
-        result = ToolResult.model_validate(output_json)
-        iteration.tool_results[result.tool_call_id] = result
+        tool_result = ToolResult.model_validate(output_json)
+        iteration.tool_results[tool_result.tool_call_id] = tool_result
 
     return state
 

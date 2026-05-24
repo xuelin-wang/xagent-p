@@ -85,10 +85,12 @@ def evaluate_state(state: AgentFlowState) -> EvaluationResult:
                 result.error is not None or result.status == "error"
             ) and name not in scores.subagents_with_errors:
                 scores.subagents_with_errors.append(name)
-        for result in iteration.tool_results.values():
+        for tool_result in iteration.tool_results.values():
             scores.tool_call_count += 1
-            if result.status in {"failed", "timed_out"}:
-                failure_modes.append(f"tool_call:{result.tool_name}:{result.status}")
+            if tool_result.status in {"failed", "timed_out"}:
+                failure_modes.append(
+                    f"tool_call:{tool_result.tool_name}:{tool_result.status}"
+                )
 
     for error in state.errors:
         failure_modes.append(f"error:{error.stage}:{error.message[:80]}")
