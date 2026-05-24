@@ -10,7 +10,14 @@ from xagent.agent_flow.config import (
     SubagentConfig,
     SummaryConfig,
 )
-from xagent.agent_flow.models import AgentFlowState, FlowStage, RunStatus
+from xagent.agent_flow.models import (
+    AgentFlowState,
+    FlowStage,
+    RunStatus,
+    SummaryDecision,
+    SummaryOutput,
+    UserRequest,
+)
 from xagent.agent_flow.planner import FakePlannerExecutor
 from xagent.agent_flow.service import AgentFlowService
 from xagent.agent_flow.summary import FakeSummaryExecutor
@@ -190,3 +197,68 @@ async def _service_uses_llm_executors_for_non_fake_model_config(
     assert len(llm_factory.providers[0].structured_requests) == 1
     assert len(llm_factory.providers[1].generate_requests) == 1
     assert len(llm_factory.providers[2].structured_requests) == 1
+
+
+def test_service_resume_returns_waiting_state_without_rerun() -> None:
+    asyncio.run(_service_resume_returns_waiting_state_without_rerun())
+
+
+async def _service_resume_returns_waiting_state_without_rerun() -> None:
+    service = AgentFlowService.in_memory(
+        _config(),
+        planner=FakePlannerExecutor(selection_names=["manuals"]),
+        summary=FakeSummaryExecutor(decision=SummaryDecision.ASK_USER),
+    )
+    waiting = await service.start_run(user_query="diagnose no start")
+    assert waiting.status is RunStatus.WAITING_FOR_USER
+
+    resumed = await service.resume_run(waiting.run_id)
+
+    assert resumed.status is RunStatus.WAITING_FOR_USER
+    assert resumed.run_id == waiting.run_id
+
+
+def test_service_submit_user_input_continues_waiting_run() -> None:
+    asyncio.run(_service_submit_user_input_continues_waiting_run())
+
+
+async def _service_submit_user_input_continues_waiting_run() -> None:
+    class _AskThenFinalSummary:
+        def __init__(self) -> None:
+            self._called = 0
+
+        async def summarize(
+            self,
+            *,
+            state: AgentFlowState,
+            iteration: object,
+        ) -> SummaryOutput:
+            self._called += 1
+            if self._called == 1:
+                return SummaryOutput(
+                    decision=SummaryDecision.ASK_USER,
+                    user_request=UserRequest(
+                        request_id="req_1",
+                        prompt="What year is the vehicle?",
+                    ),
+                )
+            return SummaryOutput(
+                decision=SummaryDecision.FINAL,
+                answer_draft="completed after user input",
+            )
+
+    service = AgentFlowService.in_memory(
+        _config(),
+        planner=FakePlannerExecutor(selection_names=["manuals"]),
+        summary=_AskThenFinalSummary(),
+    )
+
+    waiting = await service.start_run(user_query="diagnose no start")
+    assert waiting.status is RunStatus.WAITING_FOR_USER
+
+    result = await service.submit_user_input(waiting.run_id, "It's a 2020 model.")
+
+    assert result.status is RunStatus.COMPLETED
+    assert result.final_response == "completed after user input"
+    assert len(result.user_input_events) == 1
+    assert result.user_input_events[0].content == "It's a 2020 model."

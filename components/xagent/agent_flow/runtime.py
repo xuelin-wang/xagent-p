@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import UTC, datetime
+from uuid import uuid4
 
 from xagent.agent_flow.config import AgentFlowAppConfig
 from xagent.agent_flow.errors import StepRunnerError
@@ -10,6 +12,7 @@ from xagent.agent_flow.models import (
     FlowStage,
     RunStatus,
     SummaryDecision,
+    UserInputEvent,
 )
 from xagent.agent_flow.planner import PlannerExecutor
 from xagent.agent_flow.state_projection import derive_state
@@ -136,6 +139,22 @@ class AgentFlowRuntime:
                     current_iteration.summary.answer_draft or "",
                 )
 
+            if current_iteration.summary.decision is SummaryDecision.ASK_USER:
+                user_request = current_iteration.summary.user_request
+                if user_request is None:
+                    return await self._fail_state(
+                        state_after,
+                        AgentError(
+                            stage=FlowStage.SUMMARIZING,
+                            message="ASK_USER decision requires user_request in SummaryOutput.",
+                        ),
+                    )
+                wait_state = state_after.model_copy(deep=True)
+                wait_state.pending_user_request = user_request
+                wait_state.status = RunStatus.WAITING_FOR_USER
+                wait_state.current_stage = FlowStage.WAITING_FOR_USER
+                return await self._pause_state(wait_state)
+
             if current_iteration.summary.decision is SummaryDecision.FAIL:
                 return await self._fail_state(
                     state_after,
@@ -227,6 +246,45 @@ class AgentFlowRuntime:
             state=failed,
         )
         return failed
+
+    async def _pause_state(self, state: AgentFlowState) -> AgentFlowState:
+        await self._run_repository.update_run_state(state)
+        await self._checkpoint_repository.save_checkpoint(
+            run_id=state.run_id,
+            iteration=state.current_iteration,
+            checkpoint_name="ask_user",
+            stage=state.current_stage,
+            state=state,
+        )
+        return state
+
+    async def resume_with_input(
+        self,
+        state: AgentFlowState,
+        user_input: str,
+    ) -> AgentFlowState:
+        """Resume a waiting_for_user run by attaching a user input event."""
+        if state.status is not RunStatus.WAITING_FOR_USER:
+            raise ValueError(
+                f"Expected waiting_for_user status, got: {state.status}"
+            )
+        if state.pending_user_request is None:
+            raise ValueError("No pending user request found in state")
+
+        event = UserInputEvent(
+            event_id=str(uuid4()),
+            run_id=state.run_id,
+            request_id=state.pending_user_request.request_id,
+            content=user_input,
+            occurred_at=datetime.now(UTC),
+        )
+        new_state = state.model_copy(deep=True)
+        new_state.user_input_events.append(event)
+        new_state.pending_user_request = None
+        new_state.current_iteration += 1
+        new_state.current_stage = FlowStage.START
+        await self._save_state(new_state, checkpoint_name="user_input")
+        return await self._run_loop(new_state, create_run=False)
 
     async def _save_state(
         self,

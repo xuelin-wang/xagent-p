@@ -16,6 +16,7 @@ def test_health_endpoint_exists() -> None:
     assert "/agent-flow/runs" in routes
     assert "/agent-flow/runs/{run_id}" in routes
     assert "/agent-flow/runs/{run_id}/resume" in routes
+    assert "/agent-flow/runs/{run_id}/input" in routes
 
 
 def test_query_returns_502_when_openai_authentication_fails(
@@ -79,11 +80,33 @@ def test_agent_flow_routes_return_404_for_missing_run() -> None:
 
     get_response = client.get("/agent-flow/runs/missing")
     resume_response = client.post("/agent-flow/runs/missing/resume")
+    input_response = client.post(
+        "/agent-flow/runs/missing/input", json={"content": "hello"}
+    )
 
     assert get_response.status_code == 404
     assert get_response.json() == {"detail": "Agent flow run not found."}
     assert resume_response.status_code == 404
     assert resume_response.json() == {"detail": "Agent flow run not found."}
+    assert input_response.status_code == 404
+    assert input_response.json() == {"detail": "Agent flow run not found."}
+
+
+def test_agent_flow_input_returns_409_for_non_waiting_run() -> None:
+    client = TestClient(create_app(_agent_flow_api_config()))
+
+    start_response = client.post(
+        "/agent-flow/runs",
+        json={"query": "diagnose no start"},
+    )
+    assert start_response.status_code == 200
+    run_id = start_response.json()["run_id"]
+
+    input_response = client.post(
+        f"/agent-flow/runs/{run_id}/input", json={"content": "some input"}
+    )
+
+    assert input_response.status_code == 409
 
 
 def _agent_flow_api_config() -> ApiHttpConfig:

@@ -9,6 +9,7 @@ from xagent.agent_flow.models import (
     AgentFlowState,
     SummaryDecision,
     SummaryOutput,
+    UserRequest,
 )
 from xagent.agent_flow.steps import RuntimeContext, StepResult
 
@@ -74,6 +75,14 @@ class FakeSummaryExecutor:
                 rationale="Deterministic fake summary requested replan.",
                 missing_information=["More fake evidence required."],
                 suggested_replan={"reason": "fake_replan"},
+            )
+        if self._decision is SummaryDecision.ASK_USER:
+            return SummaryOutput(
+                decision=SummaryDecision.ASK_USER,
+                user_request=UserRequest(
+                    request_id="req_fake",
+                    prompt="Please provide more information.",
+                ),
             )
         return SummaryOutput(
             decision=SummaryDecision.FAIL,

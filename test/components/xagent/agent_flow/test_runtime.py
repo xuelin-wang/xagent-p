@@ -15,6 +15,7 @@ from xagent.agent_flow.models import (
     SubagentResult,
     SummaryDecision,
     SummaryOutput,
+    UserRequest,
 )
 from xagent.agent_flow.planner import FakePlannerExecutor
 from xagent.agent_flow.runtime import AgentFlowRuntime
@@ -64,6 +65,14 @@ class SequencedSummaryExecutor:
                 decision=SummaryDecision.REPLAN,
                 rationale="need another pass",
                 missing_information=["more evidence"],
+            )
+        if decision is SummaryDecision.ASK_USER:
+            return SummaryOutput(
+                decision=SummaryDecision.ASK_USER,
+                user_request=UserRequest(
+                    request_id=f"req_{self._index}",
+                    prompt="What year is the vehicle?",
+                ),
             )
         return SummaryOutput(
             decision=SummaryDecision.FINAL,
@@ -357,3 +366,61 @@ async def _runtime_resume_loads_latest_succeeded_event_checkpoint() -> None:
 
     assert result.status is RunStatus.COMPLETED
     assert result.final_response == "recovered manual result"
+
+
+def test_runtime_ask_user_sets_waiting_for_user_status() -> None:
+    asyncio.run(_runtime_ask_user_sets_waiting_for_user_status())
+
+
+async def _runtime_ask_user_sets_waiting_for_user_status() -> None:
+    config = _config()
+    runtime = AgentFlowRuntime(
+        config=config,
+        run_repository=InMemoryRunRepository(),
+        step_repository=InMemoryStepRepository(),
+        checkpoint_repository=InMemoryCheckpointRepository(),
+        planner=FakePlannerExecutor(selection_names=["manuals"]),
+        subagents=fake_subagents_from_config(config.subagents),
+        summary=FakeSummaryExecutor(decision=SummaryDecision.ASK_USER),
+    )
+
+    result = await runtime.run(
+        AgentFlowState(run_id="run_1", user_query="diagnose no start")
+    )
+
+    assert result.status is RunStatus.WAITING_FOR_USER
+    assert result.current_stage is FlowStage.WAITING_FOR_USER
+    assert result.pending_user_request is not None
+    assert result.pending_user_request.prompt == "Please provide more information."
+
+
+def test_runtime_resume_with_input_continues_waiting_run() -> None:
+    asyncio.run(_runtime_resume_with_input_continues_waiting_run())
+
+
+async def _runtime_resume_with_input_continues_waiting_run() -> None:
+    config = _config(max_iterations=5)
+    runtime = AgentFlowRuntime(
+        config=config,
+        run_repository=InMemoryRunRepository(),
+        step_repository=InMemoryStepRepository(),
+        checkpoint_repository=InMemoryCheckpointRepository(),
+        planner=FakePlannerExecutor(selection_names=["manuals"]),
+        subagents=fake_subagents_from_config(config.subagents),
+        summary=SequencedSummaryExecutor(
+            [SummaryDecision.ASK_USER, SummaryDecision.FINAL]
+        ),
+    )
+
+    waiting = await runtime.run(
+        AgentFlowState(run_id="run_1", user_query="diagnose no start")
+    )
+    assert waiting.status is RunStatus.WAITING_FOR_USER
+    assert waiting.pending_user_request is not None
+
+    result = await runtime.resume_with_input(waiting, "It's a 2020 model.")
+
+    assert result.status is RunStatus.COMPLETED
+    assert result.final_response == "final from iteration 1"
+    assert len(result.user_input_events) == 1
+    assert result.user_input_events[0].content == "It's a 2020 model."

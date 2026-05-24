@@ -23,6 +23,10 @@ class AgentFlowServiceRunner(Protocol):
 
     async def resume_run(self, run_id: str) -> AgentFlowState: ...
 
+    async def submit_user_input(
+        self, run_id: str, user_input: str
+    ) -> AgentFlowState: ...
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -47,6 +51,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Resume a run from this process.",
     )
     resume_parser.add_argument("run_id")
+
+    input_parser = subparsers.add_parser(
+        "input",
+        help="Submit user input to a waiting run.",
+    )
+    input_parser.add_argument("run_id")
+    input_parser.add_argument("input_text", help="User input text to submit.")
     return parser
 
 
@@ -82,6 +93,8 @@ async def _dispatch(
         return await service.get_run(args.run_id)
     if args.command == "resume":
         return await service.resume_run(args.run_id)
+    if args.command == "input":
+        return await service.submit_user_input(args.run_id, args.input_text)
     raise ValueError(f"Unsupported command: {args.command}")
 
 
