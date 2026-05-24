@@ -1,8 +1,11 @@
 # Agent Flow Demo UI — Design Specification
 
-Single-page web application served by the existing FastAPI `api_http` base.
-Goal: visually demonstrate replay, resume, append-only audit, and the step
-composite structure without any build tooling.
+React + Vite single-page application that demonstrates replay, resume,
+append-only audit, and composite step structure of the agent flow runtime.
+
+Frontend source lives in `bases/xagent/demo_ui/`.
+In development both servers run independently; in production the Vite build
+output is served as static files by the FastAPI `api_http` base.
 
 ---
 
@@ -143,19 +146,19 @@ Each atomic step is a card:
 └──────────────────────────────────┘
 ```
 
-Step type icons (inline SVG or unicode):
+Step type icons (inline SVG):
 | step_type | Icon |
 |-----------|------|
-| planner   | 🗺 (map) or compass SVG |
-| subagent  | 🔍 (search) or agent SVG |
-| summary   | 📋 (clipboard) or sigma SVG |
-| tool_call | ⚙ (gear) |
+| planner   | compass SVG |
+| subagent  | search SVG |
+| summary   | clipboard SVG |
+| tool_call | gear SVG |
 
 Status colours (border-left accent + badge):
 | StepStatus | Border | Badge bg |
 |------------|--------|----------|
 | pending    | gray   | gray     |
-| running    | amber  | amber (pulse animation) |
+| running    | amber  | amber (Tailwind `animate-pulse`) |
 | succeeded  | green  | green    |
 | failed     | red    | red      |
 | skipped    | slate-blue | slate-blue + "↺ Replayed" label |
@@ -180,28 +183,49 @@ PLANNER ──► ┌──── parallel ────┐ ──► SUMMARY
 
 ### 3.4 Resume Visualisation
 
-When a run was resumed (`/resume` was called on a non-terminal run), the
-audit record shows which steps had status `skipped` (recovered from prior
-state). The flow chart adds:
+When a run was resumed, the audit record shows which steps had `status=skipped`
+(recovered from prior state). The flow chart:
 
-- A horizontal dashed rule labelled **"─── Resume Point ───"** between the
-  last skipped step's iteration and the first freshly-executed step.
-- Skipped steps rendered in slate-blue with `↺ Replayed` badge.
-- Fresh steps rendered in their actual status colour.
+- Inserts a horizontal dashed rule labelled **"─── Resume Point ───"** between
+  the last skipped iteration and the first freshly-executed one.
+- Renders skipped steps in slate-blue with a `↺ Replayed` badge.
+- Renders fresh steps in their actual status colour.
 
-This makes it visually clear: above the line = recovered from checkpoint,
-below the line = executed in this resume call.
+Above the rule = recovered from checkpoint. Below = executed in this resume.
 
-### 3.5 Clicking a Step Node
+### 3.5 React Component Tree for Flow Chart
 
-Clicking any node slides in the **Step Detail Panel** from the right (see § 5).
+```
+<FlowChart state audit>
+  <IterationBlock iteration auditSteps resumePoint?>   (one per iteration)
+    <StepNode step auditEntry onSelect>                ← PLANNER
+    <Arrow />
+    <ParallelGroup>
+      <StepNode … />                                   ← each subagent
+      …
+    </ParallelGroup>
+    <Arrow />
+    <StepNode step auditEntry onSelect>                ← SUMMARY
+  </IterationBlock>
+  <ResumePoint />                                      ← inserted between iterations
+  <WaitingNode request onSubmitInput? />               ← when waiting_for_user
+  <FinalResult state />                                ← completed / failed
+</FlowChart>
+```
+
+Each `<StepNode>` receives the matching `StepAuditEntry` for status, attempt
+count, duration, and checkpoint_id. `onSelect` opens the `<StepDetailPanel>`.
+
+### 3.6 Clicking a Step Node
+
+Clicking any `<StepNode>` sets `selectedStep` state in `App`, which renders
+the `<StepDetailPanel>` (see § 6).
 
 ---
 
 ## 4. Tab: Audit Log
 
-Append-only chronological list of `StepEvent` records fetched from
-`GET /agent-flow/runs/{run_id}/audit`. Newest events appear at the bottom.
+Append-only chronological list of step records from `RunAuditRecord.steps`.
 
 ```
 ──── Audit Log  (append-only) ────────────────────────────────────
@@ -223,36 +247,47 @@ Row anatomy:
 - **Event type badge** — coloured pill (step_created=gray, step_succeeded=green,
   step_failed=red)
 - **Step name** — monospace
-- **Extra** — `iter=N`, `chk=checkpoint_id` (truncated with copy-on-click), `attempt=N` for retries
+- **Extra** — `iter=N`, `chk=checkpoint_id` (truncated, copy-on-click), `attempt=N`
 
 Append-only cues:
-- New rows slide in from the bottom when polling detects new events.
-- No row ever disappears or changes content (immutable after render).
-- A sticky header reads **"Audit Log — append-only"** with a lock icon.
+- New `<AuditRow>` elements animate in from below using a CSS keyframe on mount
+  (`translateY(8px) → 0, opacity 0 → 1`).
+- No row ever disappears or changes content after mount.
+- Sticky header: **"Audit Log — append-only 🔒"**
 
-The user_input_events from the run state are interleaved chronologically as
+`user_input_events` from `AgentFlowState` are interleaved chronologically as
 purple rows labelled `user_input`.
+
+React implementation note: `<AuditLog>` receives the previous step count as a
+prop so it knows which rows are new on each poll cycle and applies the entry
+animation only to those.
 
 ---
 
 ## 5. Tab: State JSON
 
-Pretty-printed `AgentFlowState` JSON from `GET /agent-flow/runs/{run_id}`.
+Pretty-printed `AgentFlowState` from `GET /agent-flow/runs/{run_id}`.
 
 Features:
 - Syntax-highlighted (strings=green, numbers=blue, keys=white, nulls=gray)
-- Top-level keys collapsible (triangle toggle)
+- Top-level keys collapsible via `<JsonViewer>` recursive component
 - `iterations` array collapsed by default, expandable per index
-- **Copy** button (top-right) copies raw JSON
-- **Raw** toggle removes syntax highlighting for easy paste
+- **Copy** button copies raw JSON
+- **Raw** toggle removes highlighting for easy paste
 - Auto-refreshes on the same 2 s poll when run is active
+
+`<JsonViewer>` is a ~40-line recursive React component:
+- `object` → renders key+collapsible subtree
+- `array` → renders index+collapsible subtree
+- scalar → renders coloured span
 
 ---
 
 ## 6. Step Detail Side Panel
 
-Slides in from the right (width ~380 px) when a step node is clicked.
-Clicking outside or pressing Escape dismisses it.
+`<StepDetailPanel>` slides in from the right (380 px) when a step node is
+selected. `selectedStep` state lives in `App`; `null` hides the panel.
+Dismiss: click overlay, press Escape, or click ✕.
 
 ```
 ┌─────────────────────────────────────┐
@@ -262,32 +297,28 @@ Clicking outside or pressing Escape dismisses it.
 │  Iteration 0  •  attempt 1/1        │
 │  Duration: 1.32 s                   │
 │  Checkpoint: chk_def  [copy]        │
-│  ↺ Replayed from checkpoint         │  ← only when skipped
+│  ↺ Replayed from checkpoint         │  ← only when status=skipped
 │  ─────────────────────────────────  │
 │  ▶ Input                            │  ← collapsible
-│  {                                  │
-│    "name": "manuals"                │
-│  }                                  │
+│  { "name": "manuals" }              │
 │  ─────────────────────────────────  │
 │  ▶ Output                           │  ← collapsible
-│  {                                  │
-│    "name": "manuals",               │
-│    "status": "completed",           │
-│    "content": "recovered manual…"   │
-│  }                                  │
+│  { "name": "manuals",               │
+│    "status": "completed", … }       │
 │  ─────────────────────────────────  │
 │  ▶ Error                            │  ← only when failed
 │  { … }                              │
 └─────────────────────────────────────┘
 ```
 
-Data source: the matching `StepAuditEntry` from `RunAuditRecord.steps`.
+Data source: matching `StepAuditEntry` from `RunAuditRecord.steps`.
+JSON sections reuse `<JsonViewer>`.
 
 ---
 
 ## 7. Start Run Form (Modal)
 
-Triggered by "+ New Run" in the nav.
+`<NewRunModal>` triggered by "+ New Run" in the nav.
 
 ```
 ┌──────────────────────────────────────┐
@@ -312,8 +343,8 @@ Triggered by "+ New Run" in the nav.
 └──────────────────────────────────────┘
 ```
 
-On submit: `POST /agent-flow/runs`, select the new run in nav, switch to
-Flow Chart tab, begin polling.
+On submit: `POST /agent-flow/runs` → select new run in nav → switch to
+Flow Chart tab → begin polling.
 
 ---
 
@@ -325,7 +356,7 @@ Flow Chart tab, begin polling.
 |--------|------|---------|--------|
 | `GET` | `/agent-flow/runs` | `list[AgentFlowState]` | `RunRepository.list_runs()` |
 | `GET` | `/agent-flow/runs/{run_id}/audit` | `RunAuditRecord` | `replay.build_audit_record()` |
-| `GET` | `/demo` | `FileResponse` | `static/demo.html` |
+| `GET` | `/demo` | static file redirect | Vite build output |
 
 ### 8.2 Protocol Extension
 
@@ -335,16 +366,42 @@ Flow Chart tab, begin polling.
 async def list_runs(self) -> list[AgentFlowState]: ...
 ```
 
-`InMemoryRunRepository` stores states in a dict keyed by run_id; `list_runs`
-returns `list(self._runs.values())` in insertion order.
+`InMemoryRunRepository` returns `list(self._runs.values())` in insertion order.
 
-### 8.3 Files Touched (backend)
+### 8.3 CORS (development only)
+
+The Vite dev server runs on port 5173; FastAPI runs on port 8000. Add
+`CORSMiddleware` to the FastAPI app gated behind an env flag:
+
+```python
+# app.py — only when DEMO_CORS=1
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], ...)
+```
+
+In production the Vite build output is served from the same origin, so CORS
+is not needed.
+
+### 8.4 Serving the Built Frontend
+
+```python
+# app.py
+from fastapi.staticfiles import StaticFiles
+_STATIC = Path(__file__).parent / "static" / "demo"
+if _STATIC.exists():
+    app.mount("/demo", StaticFiles(directory=_STATIC, html=True), name="demo")
+```
+
+`npm run build` in `bases/xagent/demo_ui/` writes output to
+`bases/xagent/api_http/static/demo/` (configured in `vite.config.ts`).
+
+### 8.5 Files Touched (backend)
 
 ```
 components/xagent/agent_persistence/repositories.py   ← add list_runs to protocol
 components/xagent/agent_persistence/memory.py         ← implement list_runs
 bases/xagent/api_http/routes_agent_flow.py            ← GET /runs, GET /runs/{id}/audit
-bases/xagent/api_http/app.py                          ← GET /demo route + static dir
+bases/xagent/api_http/app.py                          ← static mount + CORS flag
 ```
 
 ---
@@ -353,11 +410,14 @@ bases/xagent/api_http/app.py                          ← GET /demo route + stat
 
 | Concern | Choice | Reason |
 |---------|--------|--------|
-| Styling | Tailwind CSS via CDN | No build step; utility classes cover everything needed |
-| Flow chart | Pure CSS/HTML (flex + borders) | The graph is a fixed DAG shape, not arbitrary; no D3/Cytoscape needed |
-| JSON viewer | Inline recursive JS renderer | Avoids external dependency; ~60 lines |
-| Icons | Inline SVG snippets | No icon font download; crisp at any size |
-| HTTP | `fetch()` + `setInterval` | Native, no library |
+| Framework | React 18 + TypeScript | Component tree maps 1:1 to the visual/data tree; type safety matches backend Pydantic models |
+| Build tool | Vite 5 | Fast HMR, minimal config, outputs to any directory |
+| Styling | Tailwind CSS v3 (PostCSS, not CDN) | Utility classes; `animate-pulse` and keyframe extensions for audit row animation |
+| Flow chart | Pure CSS flex + borders | The graph is a fixed DAG shape; no D3/Cytoscape needed |
+| JSON viewer | `<JsonViewer>` recursive component | ~40 lines; no external dependency |
+| Icons | Inline SVG (heroicons subset) | No icon font download; crisp at any size |
+| HTTP | `fetch()` + `useEffect` polling | Native; cleanup on unmount avoids interval leaks |
+| State | `useState` / `useEffect` in `App` | No external state library needed at this scale |
 
 ---
 
@@ -366,133 +426,267 @@ bases/xagent/api_http/app.py                          ← GET /demo route + stat
 | Condition | Endpoint polled | Interval |
 |-----------|-----------------|----------|
 | Nav always | `GET /agent-flow/runs` | 3 s |
-| Active run selected (non-terminal) | `GET /agent-flow/runs/{id}` + `GET /agent-flow/runs/{id}/audit` | 2 s |
+| Active non-terminal run selected | `GET /agent-flow/runs/{id}` + `GET /agent-flow/runs/{id}/audit` | 2 s |
 | Terminal run selected | none | — |
 
-Polling stops for a run as soon as status is `completed` or `failed`.
-The nav continues polling to catch new runs started externally (e.g., via CLI).
+Polling uses `useEffect` with a `setInterval`; the cleanup function clears the
+interval so no leak occurs on unmount or run-change. Polling stops automatically
+when `status` is `completed` or `failed`.
 
 ---
 
-## 11. Implementation Stages
+## 11. Dev & Build Setup
+
+### Development (two terminals)
+
+```bash
+# terminal 1 — FastAPI with CORS enabled
+DEMO_CORS=1 uv run uvicorn xagent.api_http.main:app --reload --port 8000
+
+# terminal 2 — Vite dev server
+cd bases/xagent/demo_ui
+npm install
+npm run dev          # http://localhost:5173
+```
+
+Vite proxies are not needed because CORS is permissive in dev mode.
+The React app calls `http://localhost:8000` directly.
+
+### Production / Demo build
+
+```bash
+cd bases/xagent/demo_ui
+npm run build        # outputs to bases/xagent/api_http/static/demo/
+
+uv run uvicorn xagent.api_http.main:app --port 8000
+# open http://localhost:8000/demo
+```
+
+---
+
+## 12. Implementation Stages
 
 ### Stage 1 — Backend Endpoints (~2 h)
-**Goal**: all API surface the UI needs is available.
+**Goal**: all API surface the UI needs exists and is tested.
 
 Files:
 - `repositories.py` — add `list_runs()` to `RunRepository` Protocol
 - `memory.py` — implement `list_runs()` on `InMemoryRunRepository`
-- `routes_agent_flow.py` — add `GET /runs` and `GET /runs/{id}/audit`
-- `app.py` — add `GET /demo` FileResponse route
+- `routes_agent_flow.py` — add `GET /runs`, `GET /runs/{id}/audit`
+- `app.py` — CORS flag, static mount for Vite build output
 
 Tests:
-- Extend `test_api_http_app.py`: assert `/agent-flow/runs` in routes
-- Add tests for list-runs response and audit response
+- `test_api_http_app.py`: assert new routes present, list-runs and audit responses
 
 ---
 
-### Stage 2 — Shell + Navigation (~2 h)
-**Goal**: two-panel layout renders, run list populates from live API.
+### Stage 2 — Vite + React Shell (~1.5 h)
+**Goal**: project scaffolded, two-panel layout renders, API client wired.
 
-File: `bases/xagent/api_http/static/demo.html`
+Files created under `bases/xagent/demo_ui/`:
+```
+package.json
+vite.config.ts        ← outDir: ../api_http/static/demo
+tsconfig.json
+tailwind.config.js
+postcss.config.js
+src/
+  main.tsx
+  App.tsx             ← two-panel CSS Grid, polling orchestration
+  api/client.ts       ← fetch wrappers for all endpoints
+  types/agent_flow.ts ← TypeScript interfaces mirroring Pydantic models
+  components/shared/
+    StatusBadge.tsx
+    JsonViewer.tsx
+    SidePanel.tsx
+```
 
 Deliverables:
-- CSS Grid two-panel layout (220 px nav, fluid main)
-- Nav: polled run list with status dots and badges
-- Selected-run highlight and left accent bar
-- "+ New Run" button → modal with start-run form
-- Main panel: empty state ("Select a run or start a new one")
-- Run header renders (id, status badge, query, metadata chips)
+- Two-panel layout renders with placeholder content
+- `client.ts` covers all 5 endpoints (list runs, get run, start, resume, input, audit)
+- TypeScript types defined for `AgentFlowState`, `RunAuditRecord`, `StepAuditEntry`
 
 ---
 
-### Stage 3 — Flow Chart (~3 h)
-**Goal**: execution graph renders from `AgentFlowState` with correct composite structure.
+### Stage 3 — Navigation Panel (~1.5 h)
+**Goal**: run list populates from live API, new-run modal works.
 
-File: `demo.html`
+Files:
+```
+src/components/nav/
+  NavPanel.tsx        ← polling run list, selected highlight
+  RunListItem.tsx     ← status dot, id, query snippet
+  NewRunModal.tsx     ← form + POST /runs
+```
 
 Deliverables:
-- Iteration container cards (sequential wrapper)
-- PLANNER node → SUBAGENTS parallel group → SUMMARY node per iteration
-- Arrow connectors between nodes and groups
-- Status colours and badges on each node
-- WAITING_FOR_USER node and FINAL RESULT node
-- Summary decision label on SUMMARY node (final / replan / ask_user)
-- Resume Point dashed rule + skipped-step slate-blue styling
+- Nav polled every 3 s
+- Status dots with correct colours and spin animation
+- Selected run highlighted with left accent bar
+- New Run modal submits and selects the created run
+- Empty state: "No runs yet — start one above"
 
 ---
 
-### Stage 4 — Step Detail Side Panel (~2 h)
-**Goal**: clicking a node shows full step data.
+### Stage 4 — Run Header + Tab Bar (~1 h)
+**Goal**: header and tabs render for selected run.
 
-File: `demo.html`
+Files:
+```
+src/components/run/
+  RunHeader.tsx       ← id, status, query, metadata chips, action buttons
+  TabBar.tsx          ← tab switcher with active indicator
+  SubmitInputForm.tsx ← inline textarea + POST /runs/{id}/input
+```
 
 Deliverables:
-- Slide-in panel (CSS transform transition)
+- Header sticky, updates on each poll
+- Resume button triggers `POST /runs/{id}/resume`
+- Submit Input form appears when `status=waiting_for_user`
+- Tab bar switches between Flow Chart / Audit Log / State JSON
+
+---
+
+### Stage 5 — Flow Chart (~3 h)
+**Goal**: execution graph renders correctly from state + audit data.
+
+Files:
+```
+src/components/flow/
+  FlowChart.tsx       ← top-level, maps iterations to blocks
+  IterationBlock.tsx  ← rounded container, horizontal child layout
+  ParallelGroup.tsx   ← dashed border, side-by-side children
+  StepNode.tsx        ← card with icon, status, attempt, duration
+  Arrow.tsx           ← horizontal connector SVG line
+  ResumePoint.tsx     ← dashed rule with label
+  WaitingNode.tsx     ← waiting_for_user block
+  FinalResult.tsx     ← completed / failed terminal card
+```
+
+Deliverables:
+- Each iteration renders PLANNER → SUBAGENTS(parallel) → SUMMARY
+- Status colours and badges on all nodes
+- `↺ Replayed` badge on skipped nodes
+- Resume Point rule inserted between iterations using audit data
+- Summary decision label (final / replan / ask_user) on SUMMARY node
+- WAITING_FOR_USER node with pending request prompt
+- FINAL RESULT card (completed or failed)
+
+---
+
+### Stage 6 — Step Detail Side Panel (~1.5 h)
+**Goal**: clicking a node shows full step data in a slide-in panel.
+
+Files:
+```
+src/components/flow/StepDetailPanel.tsx
+```
+
+Deliverables:
+- Slide-in via CSS `transform: translateX` transition
 - Step metadata (name, type, status, iteration, attempt, duration, checkpoint_id)
-- "↺ Replayed" indicator for skipped steps
-- Collapsible JSON viewer (input, output, error sections)
+- `↺ Replayed from checkpoint` indicator for skipped steps
+- `<JsonViewer>` sections for input, output, error (collapsible)
 - Dismiss on outside-click or Escape
 
 ---
 
-### Stage 5 — Audit Log Tab (~2 h)
-**Goal**: append-only step events rendered with animations.
+### Stage 7 — Audit Log Tab (~1.5 h)
+**Goal**: append-only step events rendered with entry animations.
 
-File: `demo.html`
+Files:
+```
+src/components/audit/
+  AuditLog.tsx        ← scrollable list, sticky header
+  AuditRow.tsx        ← single event row with mount animation
+```
 
 Deliverables:
-- Chronological rows from `RunAuditRecord.steps` (via `/audit` endpoint)
-- Event type badges (step_created, step_succeeded, step_failed)
-- user_input rows interleaved from `AgentFlowState.user_input_events`
-- Slide-in animation for new rows on poll
+- Rows sourced from `RunAuditRecord.steps` + `AgentFlowState.user_input_events`
+- Event type badges (step_created / step_succeeded / step_failed / user_input)
+- New rows animate in from below on each poll cycle
+- Rows never change after mount
 - Sticky "Audit Log — append-only 🔒" header
 
 ---
 
-### Stage 6 — State JSON Tab + Actions (~2 h)
-**Goal**: full state visibility and all interactive actions work end-to-end.
+### Stage 8 — State JSON Tab + Polish (~1.5 h)
+**Goal**: full state visibility and consistent edge-case handling.
 
-File: `demo.html`
+Files:
+```
+src/components/state/StateJsonTab.tsx
+```
 
 Deliverables:
-- Syntax-highlighted, collapsible JSON viewer for AgentFlowState
+- Syntax-highlighted `<JsonViewer>` for full `AgentFlowState`
 - Copy + Raw toggle
-- Resume button → `POST /runs/{id}/resume` → refresh
-- Submit Input inline form → `POST /runs/{id}/input` → refresh
-- Loading skeletons while fetch is in-flight
-- Error banner on failed fetch (non-2xx)
-- Auto-stop polling when run reaches terminal state
+- Loading skeleton while fetch is in-flight
+- Error banner on non-2xx responses
+- Empty main panel state ("Select a run or start a new one")
+- 404 graceful handling if run disappears between polls
+- Tab dot indicator on Audit Log when new events arrive while on another tab
+- Page title updates to reflect active run status
 
 ---
 
-### Stage 7 — Polish (~1 h)
-**Goal**: consistent visual quality and edge cases handled.
-
-Deliverables:
-- Empty nav state ("No runs yet — start one above")
-- 404 graceful handling if a run disappears between polls
-- Responsive: main panel scrolls independently at narrow widths
-- Tab indicator (dot) on Audit Log tab when new events arrive while tab is not active
-- Favicon and page title update to reflect active run status
+**Total estimated effort: ~13.5 h across 8 stages**
 
 ---
 
-**Total estimated effort: ~14 h across 7 stages**
-
----
-
-## 12. File Locations Summary
+## 13. File Locations Summary
 
 ```
-bases/xagent/api_http/
-├── app.py                       ← add GET /demo
-├── routes_agent_flow.py         ← add GET /runs, GET /runs/{id}/audit
+bases/xagent/demo_ui/                  ← React + Vite source (new base)
+├── package.json
+├── vite.config.ts                     ← outDir: ../api_http/static/demo
+├── tsconfig.json
+├── tailwind.config.js
+├── postcss.config.js
+└── src/
+    ├── main.tsx
+    ├── App.tsx
+    ├── api/
+    │   └── client.ts
+    ├── types/
+    │   └── agent_flow.ts
+    └── components/
+        ├── shared/
+        │   ├── StatusBadge.tsx
+        │   ├── JsonViewer.tsx
+        │   └── SidePanel.tsx
+        ├── nav/
+        │   ├── NavPanel.tsx
+        │   ├── RunListItem.tsx
+        │   └── NewRunModal.tsx
+        ├── run/
+        │   ├── RunHeader.tsx
+        │   ├── TabBar.tsx
+        │   └── SubmitInputForm.tsx
+        ├── flow/
+        │   ├── FlowChart.tsx
+        │   ├── IterationBlock.tsx
+        │   ├── ParallelGroup.tsx
+        │   ├── StepNode.tsx
+        │   ├── Arrow.tsx
+        │   ├── ResumePoint.tsx
+        │   ├── WaitingNode.tsx
+        │   ├── FinalResult.tsx
+        │   └── StepDetailPanel.tsx
+        ├── audit/
+        │   ├── AuditLog.tsx
+        │   └── AuditRow.tsx
+        └── state/
+            └── StateJsonTab.tsx
+
+bases/xagent/api_http/                 ← existing FastAPI base
+├── app.py                             ← CORS flag, static mount for /demo
+├── routes_agent_flow.py               ← GET /runs, GET /runs/{id}/audit
 ├── static/
-│   └── demo.html                ← entire frontend (single file)
-└── DEMO_UI_DESIGN.md            ← this document
+│   └── demo/                          ← Vite build output (gitignored)
+└── DEMO_UI_DESIGN.md                  ← this document
 
 components/xagent/agent_persistence/
-├── repositories.py              ← add list_runs to RunRepository Protocol
-└── memory.py                    ← implement list_runs on InMemoryRunRepository
+├── repositories.py                    ← add list_runs to RunRepository Protocol
+└── memory.py                          ← implement list_runs
 ```
