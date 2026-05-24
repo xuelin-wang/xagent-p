@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -93,7 +94,9 @@ def _build_runtime(config: ApiHttpConfig) -> LangChainMultiAgentApp:
 
 def create_app(config: ApiHttpConfig | None = None) -> FastAPI:
     if config is None:
-        config, _ = load_runtime_config(ApiHttpConfig, [])
+        env_cfg = os.environ.get("XAGENT_API_HTTP_CONFIG")
+        argv = ["--config", env_cfg] if env_cfg else []
+        config, _ = load_runtime_config(ApiHttpConfig, argv)
     app = FastAPI(title="xagent LangChain Service", version="0.1.0")
     if config.fastapi.cors.allow_origins:
         app.add_middleware(
