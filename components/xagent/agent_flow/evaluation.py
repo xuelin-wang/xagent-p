@@ -130,7 +130,3 @@ async def evaluate_run(
         1 for s in audit.steps if s.status.value == "failed"
     )
     return result
-
-
-def _is_terminal(status: RunStatus) -> bool:
-    return status in {RunStatus.COMPLETED, RunStatus.FAILED}
