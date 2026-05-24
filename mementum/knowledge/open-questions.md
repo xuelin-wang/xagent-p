@@ -32,22 +32,6 @@ Source pointers:
 - `components/xagent/agent_flow/tool_registry.py`
 - `components/xagent/agent_flow/subagents.py`
 
-## Timeout and Deadline Enforcement
-
-Status: open
-
-Question:
-- Which step types need `timeout_ms` / `deadline_ms` enforcement first, and how should `asyncio.wait_for` be wired into `StepRunner`?
-
-Context:
-- `RetryPolicy`, `StepExecutionPolicy`, and `RuntimeExecutionPolicy` models exist with `timeout_ms` and `deadline_ms` fields.
-- `StepRunner` does not currently wrap step execution with `asyncio.wait_for`; timeouts are not enforced.
-- LLM-backed steps (planner, subagent, summary) and tool calls are the highest-priority targets.
-
-Source pointers:
-- `components/xagent/agent_flow/step_runner.py`
-- `components/xagent/agent_flow/steps.py`
-
 ## Evaluation Quality Metrics
 
 Status: open

@@ -43,6 +43,8 @@ Record rules that should remain true unless an explicit design change updates co
 - Each validated tool call must have a stable `tool_call_id` and `idempotency_key`, and should execute as a durable child `tool_call` step.
 - Write-side actuator retries require idempotency support or explicit policy approval.
 - Per-attempt timeout, total deadline, retry, and continue-on-failure behavior must be explicit in execution policy and covered by deterministic tests.
+- Execution-policy time values are milliseconds. `timeout_ms` applies per attempt, `deadline_ms` applies to the total step or composite execution, and unset or `0` values are unbounded. Negative timeout or deadline values are invalid config.
+- Agent-flow execution policy must flow through the step tree: top-level steps use `agent_flow.execution_policy`, child steps inherit their parent composite policy, app step-type overrides may refine inherited policy, and local child contexts may override inherited fields.
 - Waiting for user input should use an explicit `waiting_for_user` status and append-only user input records, not terminal response state.
 
 ## Source Pointers
@@ -57,6 +59,10 @@ Record rules that should remain true unless an explicit design change updates co
 - `components/xagent/llm_provider_openai/provider.py`
 - `components/xagent/llm_provider_anthropic/provider.py`
 - `components/xagent/config/strict.py`
+- `components/xagent/agent_flow/config.py`
+- `components/xagent/agent_flow/steps.py`
+- `components/xagent/agent_flow/step_runner.py`
+- `components/xagent/agent_flow/tools.py`
 - `mementum/knowledge/replay-resume-agent-system-design.md`
 - `mementum/knowledge/replay-resume-agent-implementation-plan.md`
 - `test/components/xagent/llm_provider_openai/`

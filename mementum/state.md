@@ -19,19 +19,18 @@
 - Keep the runtime deterministic by default with fake planner/subagent/summary executors, and select provider-backed executors from model config when requested.
 - Keep tests deterministic by default; live provider tests are opt-in through the `require_env` marker.
 - Keep deployment secrets outside committed values files except disposable local `kind` overrides.
-- The replay/resume implementation is complete. The next decision is which gap to address: real tool execution, timeout enforcement, or evaluation quality metrics (see open questions).
+- The replay/resume implementation is complete. The next decision is which gap to address: real tool execution or evaluation quality metrics (see open questions).
 - A React + Vite demo UI (`bases/xagent/demo_ui/`) is implemented for visualising agent-flow runs: flow chart, audit log (append-only), state JSON, step detail panel, and resume-point markers.
 
 ## Next Steps
 
 - **Real tool execution**: wire concrete `ToolExecutor` implementations into the subagent path, replacing the monolithic `LLMFlowSubagent` with the planner→validate→execute→merge pipeline. `ToolCallStep` and `build_execute_tools_step` are ready.
-- **Timeout/deadline enforcement**: add `asyncio.wait_for` wrapping in `StepRunner` to honour `timeout_ms` and `deadline_ms` from `StepExecutionPolicy`. Models exist; enforcement is missing.
 - **Evaluation quality metrics**: extend `evaluation.py` with content-quality scoring (answer quality, grounding, tool selection) using reference answers or LLM judges. Current evaluation is structural only.
 
 ## Blockers / Unknowns
 
 - `README.md` still contains TODO-level notes for logging/tracing work.
-- No decision yet on which of the three next-step gaps to prioritise.
+- No decision yet on whether real tool execution or evaluation quality metrics should be prioritised next.
 
 ## Recent Decisions
 
@@ -55,6 +54,7 @@
 - `XAGENT_API_HTTP_CONFIG` env var wired into `create_app()`: when set, its value is passed as `--config` to `load_runtime_config`, enabling config file selection without touching CLI argv (needed for `uvicorn` direct start).
 - Dev config at `development/config/api-http.dev.yaml` enables fake executors, CORS for `http://localhost:5173`, and two named fake subagents (`manuals`, `repair_history`) for demo purposes.
 - Two new HTTP endpoints added to `routes_agent_flow.py`: `GET /agent-flow/runs` (list all runs) and `GET /agent-flow/runs/{run_id}/audit` (fetch `RunAuditRecord`).
+- Agent-flow execution policy is now a top-level app config element (`agent_flow.execution_policy`). `StepRunner` enforces `timeout_ms` and `deadline_ms` with `asyncio.wait_for`; values are milliseconds, `0` means unbounded, and negative values are rejected. Top-level steps use app policy; composite children inherit parent policy; step-type and local overrides can refine it.
 
 ## Source Pointers
 
@@ -70,6 +70,10 @@
 - `mementum/knowledge/replay-resume-agent-system-design.md`
 - `mementum/knowledge/replay-resume-agent-implementation-plan.md`
 - `components/xagent/llm_config/settings.py`
+- `components/xagent/agent_flow/config.py`
+- `components/xagent/agent_flow/steps.py`
+- `components/xagent/agent_flow/step_runner.py`
+- `components/xagent/agent_flow/tools.py`
 - `AGENTS.md`
 - `CLAUDE.md`
 - `prompts/README.md`
