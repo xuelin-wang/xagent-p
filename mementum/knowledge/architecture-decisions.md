@@ -210,7 +210,7 @@ Decision:
 - Treat append-only `StepEvent` records as the durable source of truth, with `StepRecord`/step tables as rebuildable projections.
 - Consider a step complete only when its state-after checkpoint and `step_succeeded` event are committed as one logical unit.
 - Execute each validated tool call as a durable child `tool_call` step with stable `tool_call_id` and `idempotency_key`.
-- Represent waiting for external user input as an explicit `waiting_for_user` run status plus append-only `UserInputEvent` records.
+- Represent pause/resume as a durable `WaitStep` plus `MessageInputStep` on the same `conversation_id`; a new message resumes the waiting run and is recorded in the audit trail. Keep `submit_user_input` only as compatibility glue.
 - Resolve timeout, deadline, retry, and continue-on-failure behavior through global execution policy plus optional per-step/tool overrides.
 
 Rationale:
@@ -223,7 +223,7 @@ Rationale:
 Implications:
 - Future agent-flow work should follow `mementum/knowledge/replay-resume-agent-implementation-plan.md` and its conformance checklist.
 - New runtime code should extend the existing `agent_flow` and `agent_persistence` components rather than introducing a generic graph engine or parallel package.
-- Replay and evaluation should consume recorded runs, events, checkpoints, artifacts, snapshots, and user input events without rerunning nondeterministic steps.
+- Replay and evaluation should consume recorded runs, events, checkpoints, artifacts, snapshots, wait steps, and conversation message steps without rerunning nondeterministic steps.
 - Write-side actuator retries require idempotency support or explicit policy approval.
 
 Source pointers:

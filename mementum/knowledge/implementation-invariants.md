@@ -45,7 +45,7 @@ Record rules that should remain true unless an explicit design change updates co
 - Per-attempt timeout, total deadline, retry, and continue-on-failure behavior must be explicit in execution policy and covered by deterministic tests.
 - Execution-policy time values are milliseconds. `timeout_ms` applies per attempt, `deadline_ms` applies to the total step or composite execution, and unset or `0` values are unbounded. Negative timeout or deadline values are invalid config.
 - Agent-flow execution policy must flow through the step tree: top-level steps use `agent_flow.execution_policy`, child steps inherit their parent composite policy, app step-type overrides may refine inherited policy, and local child contexts may override inherited fields.
-- Waiting for user input should use an explicit `waiting_for_user` status and append-only user input records, not terminal response state.
+- Pause/resume should use durable `WaitStep` and `MessageInputStep` records tied to `conversation_id`; a new message resumes the waiting run, and the audit trail should preserve both the pause point and the inbound message.
 
 ## Source Pointers
 

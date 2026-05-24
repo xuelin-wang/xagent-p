@@ -20,7 +20,7 @@
 - Keep tests deterministic by default; live provider tests are opt-in through the `require_env` marker.
 - Keep deployment secrets outside committed values files except disposable local `kind` overrides.
 - The replay/resume implementation is complete. The next decision is which gap to address: real tool execution or evaluation quality metrics (see open questions).
-- A React + Vite demo UI (`bases/xagent/demo_ui/`) is implemented for visualising agent-flow runs: flow chart, audit log (append-only), state JSON, step detail panel, and resume-point markers.
+- A React + Vite demo UI (`bases/xagent/demo_ui/`) is implemented for visualising agent-flow runs: flow chart, append-only audit log, state JSON, step detail panel, conversation id, and wait/message resume markers.
 
 ## Next Steps
 
@@ -46,7 +46,7 @@
 - Agent runtime framework design added under `mementum/knowledge/agent-runtime-framework-design.md`; the implemented runtime avoids LangGraph, coexists with the existing LangChain sample, follows Polylith layout, and prefers reuse of existing xagent features.
 - Durable agent-flow runtime implemented under `components/xagent/agent_flow/` with memory-backed repositories, resume reconciliation from succeeded step records, thin LLM adapter over the existing `LLMProvider` protocol, and service/CLI/HTTP entrypoints.
 - Provider API key loading moved into config models via explicit `secret` and `env_var` field metadata, with provider-specific config subclasses and config construction helpers.
-- `ASK_USER` summary decision pauses a run at `WAITING_FOR_USER` status; user input continues the same run (not a new one) and is recorded as a durable `UserInputEvent`. `submit_user_input` on the service is the entry point.
+- Pause/resume is now conversation-scoped: a durable `WaitStep` pauses the run, a new inbound conversation message resumes it, and a durable `MessageInputStep` records the message in the audit trail. `conversation_id` is the resume key, `pending_wait` tracks the active pause, and `submit_user_input` remains only as compatibility glue.
 - `evaluation.py` produces only structural metrics (counts, flags, decision sequences, failure modes); LLM-graded content quality scoring is deferred pending ground-truth dataset or judge design.
 - `replay.py` audit playback reads from repositories without executing any step logic; `replay_from_steps` wraps `derive_state` and is the canonical way to reconstruct state from recorded steps.
 - `StepRunner` rename to `StepExecutor` deferred — churn across tests and runtime is too high relative to current value; revisit when the public surface stabilises.
@@ -55,6 +55,7 @@
 - Dev config at `development/config/api-http.dev.yaml` enables fake executors, CORS for `http://localhost:5173`, and two named fake subagents (`manuals`, `repair_history`) for demo purposes.
 - Two new HTTP endpoints added to `routes_agent_flow.py`: `GET /agent-flow/runs` (list all runs) and `GET /agent-flow/runs/{run_id}/audit` (fetch `RunAuditRecord`).
 - Agent-flow execution policy is now a top-level app config element (`agent_flow.execution_policy`). `StepRunner` enforces `timeout_ms` and `deadline_ms` with `asyncio.wait_for`; values are milliseconds, `0` means unbounded, and negative values are rejected. Top-level steps use app policy; composite children inherit parent policy; step-type and local overrides can refine it.
+- Agent-flow pause/resume now uses durable `WaitStep` and `MessageInputStep` records tied to `conversation_id`; the audit shape is `A -> WaitStep -> MessageInputStep -> B -> C`, including resumed runs.
 
 ## Source Pointers
 
