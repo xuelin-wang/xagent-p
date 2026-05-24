@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from typing import Any
 
 from xagent.agent_flow.errors import NonRetryableStepError, StepRunnerError
 from xagent.agent_flow.models import AgentFlowState, StepStatus
-from xagent.agent_flow.steps import RuntimeContext, RuntimeStep
+from xagent.agent_flow.steps import (
+    ParallelStepGroup,
+    RuntimeContext,
+    RuntimeStep,
+    SequenceStepGroup,
+    StepResult,
+)
 from xagent.agent_persistence.repositories import (
     CheckpointRecord,
     StepRecord,
@@ -14,6 +23,30 @@ from xagent.agent_persistence.repositories import (
 
 StepFunction = Callable[[StepRecord], Awaitable[dict[str, Any]]]
 StepSuccessCommit = Callable[[dict[str, Any]], Awaitable[CheckpointRecord | None]]
+
+
+@dataclass
+class ChildStep:
+    """Bundles a step with its execution metadata for use inside composite steps.
+
+    Design link: Section 3.1, step hierarchy.
+    Non-goal: should not contain retry or checkpoint logic (that stays in the executor).
+
+    input_json may be a static dict or a Callable[[AgentFlowState], dict] evaluated
+    at execution time — useful when the input depends on prior step outputs.
+    context overrides the parent's RuntimeContext for this child only (e.g., per-step
+    retry policy). If None, the parent context is inherited.
+    on_success is called after the step succeeds; its return value provides the
+    checkpoint_id for the step_succeeded event.
+    """
+
+    step: Any  # RuntimeStep | SequenceStepGroup | ParallelStepGroup
+    step_name: str
+    input_json: Any = dc_field(
+        default_factory=dict
+    )  # dict | Callable[[AgentFlowState], dict]
+    on_success: StepSuccessCommit | None = None
+    context: RuntimeContext | None = None
 
 
 class StepRunner:
@@ -29,6 +62,7 @@ class StepRunner:
         step: RuntimeStep,
         context: RuntimeContext,
         on_success: StepSuccessCommit | None = None,
+        parent_step_id: str | None = None,
     ) -> dict[str, Any]:
         """Run a RuntimeStep through the existing durable step machinery."""
 
@@ -44,6 +78,7 @@ class StepRunner:
                 context=context,
             ),
             on_success=on_success,
+            parent_step_id=parent_step_id,
         )
 
     async def run_step(
@@ -56,6 +91,7 @@ class StepRunner:
         max_attempts: int,
         fn: StepFunction,
         on_success: StepSuccessCommit | None = None,
+        parent_step_id: str | None = None,
     ) -> dict[str, Any]:
         attempts = max(max_attempts, 1)
         step = await self._step_repository.create_or_get_step(
@@ -66,6 +102,7 @@ class StepRunner:
             input_json=input_json,
             max_attempts=attempts,
             idempotency_key=f"{state.run_id}:{state.current_iteration}:{step_name}",
+            parent_step_id=parent_step_id,
         )
 
         if step.status is StepStatus.SUCCEEDED:
@@ -164,3 +201,135 @@ class StepRunner:
         if checkpoint is None:
             return None
         return checkpoint.checkpoint_id
+
+    async def execute_composite(
+        self,
+        group: SequenceStepGroup | ParallelStepGroup,
+        state: AgentFlowState,
+        context: RuntimeContext,
+        *,
+        parent_step_id: str | None = None,
+        on_success: StepSuccessCommit | None = None,
+    ) -> StepResult:
+        """Execute a composite step group (sequence or parallel).
+
+        Design link: Section 3.1, step hierarchy.
+        Creates its own durable step record so it appears in the event ledger.
+        Children are executed with parent_step_id pointing to this group's record.
+        on_success is called after all children succeed; its checkpoint_id is stored
+        on the composite's step_succeeded event (same invariant as atomic steps).
+        Resume: already-succeeded composites are skipped; partially completed ones
+        re-execute only incomplete children (each child handles its own idempotency).
+        """
+        step_record = await self._step_repository.create_or_get_step(
+            run_id=state.run_id,
+            iteration=state.current_iteration,
+            step_name=group.step_name,
+            step_type=group.step_type,
+            input_json={},
+            max_attempts=1,
+            idempotency_key=f"{state.run_id}:{state.current_iteration}:{group.step_name}",
+            parent_step_id=parent_step_id,
+        )
+
+        if step_record.status is StepStatus.SUCCEEDED:
+            return StepResult(output_json=step_record.output_json or {})
+
+        step_record = await self._step_repository.mark_step_running(step_record.step_id)
+
+        try:
+            if isinstance(group, SequenceStepGroup):
+                result = await self._execute_sequence(
+                    group, state, context, step_record.step_id
+                )
+            else:
+                result = await self._execute_parallel(
+                    group, state, context, step_record.step_id
+                )
+        except Exception as exc:
+            error_json = self._error_json(exc, retryable=False)
+            await self._step_repository.mark_step_failed(
+                step_record.step_id, error_json
+            )
+            raise
+
+        await self._step_repository.mark_step_succeeded(
+            step_record.step_id,
+            result.output_json,
+            checkpoint_id=await self._checkpoint_id_from_success_commit(
+                result.output_json, on_success
+            ),
+        )
+        return result
+
+    async def _execute_sequence(
+        self,
+        group: SequenceStepGroup,
+        state: AgentFlowState,
+        context: RuntimeContext,
+        parent_step_id: str,
+    ) -> StepResult:
+        current = state
+        for spec in group.children:
+            if callable(spec):
+                child = spec(current)
+                if child is None:
+                    continue
+            else:
+                child = spec
+            result = await self._execute_child(child, current, context, parent_step_id)
+            if result.state_after is not None:
+                current = result.state_after
+        return StepResult(output_json={}, state_after=current)
+
+    async def _execute_parallel(
+        self,
+        group: ParallelStepGroup,
+        state: AgentFlowState,
+        context: RuntimeContext,
+        parent_step_id: str,
+    ) -> StepResult:
+        children = group.children
+        if callable(children):
+            children = children(state)
+
+        results = await asyncio.gather(
+            *[
+                self._execute_child(child, state, context, parent_step_id)
+                for child in children
+            ]
+        )
+
+        merged: dict[str, Any] = {}
+        for result in results:
+            merged.update(result.output_json)
+        return StepResult(output_json=merged)
+
+    async def _execute_child(
+        self,
+        child: ChildStep,
+        state: AgentFlowState,
+        context: RuntimeContext,
+        parent_step_id: str,
+    ) -> StepResult:
+        effective_context = child.context if child.context is not None else context
+        step = child.step
+        input_json = (
+            child.input_json(state) if callable(child.input_json) else child.input_json
+        )
+
+        if isinstance(step, (SequenceStepGroup, ParallelStepGroup)):
+            return await self.execute_composite(
+                step, state, effective_context, parent_step_id=parent_step_id
+            )
+
+        output_json = await self.run_runtime_step(
+            state=state,
+            step_name=child.step_name,
+            input_json=input_json,
+            step=step,
+            context=effective_context,
+            on_success=child.on_success,
+            parent_step_id=parent_step_id,
+        )
+        return StepResult(output_json=output_json)

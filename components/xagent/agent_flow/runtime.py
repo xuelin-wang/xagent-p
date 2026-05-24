@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 from typing import Any
 
@@ -18,11 +17,12 @@ from xagent.agent_flow.models import (
     SummaryDecision,
     SummaryOutput,
 )
-from xagent.agent_flow.planner import PlannerExecutor, PlannerStep
+from xagent.agent_flow.planner import PlannerExecutor
 from xagent.agent_flow.step_runner import StepRunner
-from xagent.agent_flow.steps import RetryPolicy, RuntimeContext, StepExecutionPolicy
-from xagent.agent_flow.subagents import FlowSubagent, SubagentStep
-from xagent.agent_flow.summary import SummaryExecutor, SummaryStep
+from xagent.agent_flow.steps import RuntimeContext
+from xagent.agent_flow.subagents import FlowSubagent
+from xagent.agent_flow.summary import SummaryExecutor
+from xagent.agent_flow.workflow import build_iteration_step
 from xagent.agent_persistence.repositories import (
     CheckpointRecord,
     CheckpointRepository,
@@ -52,7 +52,6 @@ class AgentFlowRuntime:
         self._subagents = dict(subagents)
         self._summary = summary
         self._step_runner = StepRunner(step_repository)
-        self._state_commit_lock = asyncio.Lock()
 
     async def run(self, state: AgentFlowState) -> AgentFlowState:
         return await self._run_loop(state, create_run=True)
@@ -80,9 +79,7 @@ class AgentFlowRuntime:
         while True:
             iteration = state.get_or_create_current_iteration()
             try:
-                await self._run_planner(state, iteration)
-                await self._run_subagents(state, iteration)
-                await self._run_summary(state, iteration)
+                await self._run_iteration(state, iteration)
             except StepRunnerError as exc:
                 return await self._fail_state(
                     state,
@@ -103,6 +100,22 @@ class AgentFlowRuntime:
                         message=str(exc),
                         error_type=type(exc).__name__,
                         retryable=False,
+                    ),
+                )
+
+            failed_subagents = [
+                r for r in iteration.subagent_results.values() if r.status == "error"
+            ]
+            if (
+                failed_subagents
+                and not self._config.workflow.continue_on_subagent_failure
+            ):
+                first = failed_subagents[0]
+                return await self._fail_state(
+                    state,
+                    AgentError(
+                        stage=FlowStage.SUBAGENTS,
+                        message=first.error.message if first.error else first.content,
                     ),
                 )
 
@@ -147,142 +160,40 @@ class AgentFlowRuntime:
             state.current_stage = FlowStage.START
             await self._save_state(state, checkpoint_name="replan")
 
-    async def _run_planner(
+    async def _run_iteration(
         self,
         state: AgentFlowState,
         iteration: AgentFlowIteration,
     ) -> None:
-        state.current_stage = FlowStage.PLANNING
-        planner_step = PlannerStep(
-            executor=self._planner,
-            subagents=self._config.subagents,
-            max_selections=self._config.workflow.max_subagents_per_iteration,
-        )
-        context = RuntimeContext(
-            execution_policy=StepExecutionPolicy(
-                retry=RetryPolicy(max_attempts=self._config.planner.max_attempts),
-            )
-        )
-        output_json = await self._step_runner.run_runtime_step(
+        """Build and execute the iteration workflow tree.
+
+        Design link: Section 3.1, step hierarchy.
+        Non-goal: does not contain per-phase orchestration; delegates to workflow.py.
+        """
+        workflow_step = build_iteration_step(
+            config=self._config,
+            planner=self._planner,
+            subagents=self._subagents,
+            summary=self._summary,
             state=state,
-            step_name="planner",
-            input_json={
-                "query": state.user_query,
-                "subagents": list(self._config.subagents),
-            },
-            step=planner_step,
-            context=context,
-            on_success=lambda output_json: self._commit_planner_success(
-                state,
-                iteration,
-                output_json,
+            iteration=iteration,
+            on_planner_success=lambda output_json: self._commit_planner_success(
+                state, iteration, output_json
+            ),
+            on_subagent_success=lambda output_json: self._commit_subagent_success(
+                state, output_json
+            ),
+            on_summary_success=lambda output_json: self._commit_summary_success(
+                state, iteration, output_json
             ),
         )
-        iteration.plan = PlanOutput.model_validate(output_json)
 
-    async def _run_subagents(
-        self,
-        state: AgentFlowState,
-        iteration: AgentFlowIteration,
-    ) -> None:
-        state.current_stage = FlowStage.SUBAGENTS
-        if iteration.plan is None:
-            raise RuntimeError("Planner must run before subagents.")
+        async def _commit_iteration_success(_: dict[str, Any]) -> CheckpointRecord:
+            return await self._save_state(state, checkpoint_name="iteration")
 
-        if self._config.workflow.subagent_execution_mode == "parallel":
-            results = await asyncio.gather(
-                *[
-                    self._run_subagent_step(state, selection.name)
-                    for selection in iteration.plan.selections
-                    if selection.name in self._subagents
-                ]
-            )
-        else:
-            results = []
-            for selection in iteration.plan.selections:
-                if selection.name in self._subagents:
-                    results.append(await self._run_subagent_step(state, selection.name))
-
-        for result in results:
-            iteration.subagent_results[result.name] = result
-            if result.error is not None and result.error not in iteration.errors:
-                iteration.errors.append(result.error)
-
-        failed_results = [result for result in results if result.status == "error"]
-        if failed_results and not self._config.workflow.continue_on_subagent_failure:
-            first = failed_results[0]
-            raise RuntimeError(first.error.message if first.error else first.content)
-
-        await self._save_state(state, checkpoint_name="subagents")
-
-    async def _run_subagent_step(
-        self,
-        state: AgentFlowState,
-        subagent_name: str,
-    ) -> SubagentResult:
-        iteration = state.get_or_create_current_iteration()
-        if iteration.plan is None:
-            raise RuntimeError("Planner must run before subagents.")
-        selection = next(
-            selection
-            for selection in iteration.plan.selections
-            if selection.name == subagent_name
+        await self._step_runner.execute_composite(
+            workflow_step, state, RuntimeContext(), on_success=_commit_iteration_success
         )
-        subagent_step = SubagentStep(
-            subagent=self._subagents[subagent_name],
-            selection=selection,
-        )
-        context = RuntimeContext(
-            execution_policy=StepExecutionPolicy(
-                retry=RetryPolicy(
-                    max_attempts=self._config.subagents[subagent_name].max_attempts
-                ),
-            )
-        )
-        output_json = await self._step_runner.run_runtime_step(
-            state=state,
-            step_name=f"subagent:{subagent_name}",
-            input_json=selection.model_dump(mode="json"),
-            step=subagent_step,
-            context=context,
-            on_success=lambda output_json: self._commit_subagent_success(
-                state,
-                output_json,
-            ),
-        )
-        return SubagentResult.model_validate(output_json)
-
-    async def _run_summary(
-        self,
-        state: AgentFlowState,
-        iteration: AgentFlowIteration,
-    ) -> None:
-        state.current_stage = FlowStage.SUMMARIZING
-        summary_step = SummaryStep(executor=self._summary, iteration=iteration)
-        context = RuntimeContext(
-            execution_policy=StepExecutionPolicy(
-                retry=RetryPolicy(max_attempts=self._config.summary.max_attempts),
-            )
-        )
-        output_json = await self._step_runner.run_runtime_step(
-            state=state,
-            step_name="summary",
-            input_json={
-                "query": state.user_query,
-                "subagent_results": {
-                    name: result.model_dump(mode="json")
-                    for name, result in iteration.subagent_results.items()
-                },
-            },
-            step=summary_step,
-            context=context,
-            on_success=lambda output_json: self._commit_summary_success(
-                state,
-                iteration,
-                output_json,
-            ),
-        )
-        iteration.summary = SummaryOutput.model_validate(output_json)
 
     async def _complete_state(
         self,
@@ -343,25 +254,23 @@ class AgentFlowRuntime:
         iteration: AgentFlowIteration,
         output_json: dict[str, Any],
     ) -> CheckpointRecord:
-        async with self._state_commit_lock:
-            iteration.plan = PlanOutput.model_validate(output_json)
-            return await self._save_state(state, checkpoint_name="planner")
+        iteration.plan = PlanOutput.model_validate(output_json)
+        return await self._save_state(state, checkpoint_name="planner")
 
     async def _commit_subagent_success(
         self,
         state: AgentFlowState,
         output_json: dict[str, Any],
     ) -> CheckpointRecord:
-        async with self._state_commit_lock:
-            result = SubagentResult.model_validate(output_json)
-            iteration = state.get_or_create_current_iteration()
-            iteration.subagent_results[result.name] = result
-            if result.error is not None and result.error not in iteration.errors:
-                iteration.errors.append(result.error)
-            return await self._save_state(
-                state,
-                checkpoint_name=f"subagent:{result.name}",
-            )
+        result = SubagentResult.model_validate(output_json)
+        iteration = state.get_or_create_current_iteration()
+        iteration.subagent_results[result.name] = result
+        if result.error is not None and result.error not in iteration.errors:
+            iteration.errors.append(result.error)
+        return await self._save_state(
+            state,
+            checkpoint_name=f"subagent:{result.name}",
+        )
 
     async def _commit_summary_success(
         self,
@@ -369,9 +278,8 @@ class AgentFlowRuntime:
         iteration: AgentFlowIteration,
         output_json: dict[str, Any],
     ) -> CheckpointRecord:
-        async with self._state_commit_lock:
-            iteration.summary = SummaryOutput.model_validate(output_json)
-            return await self._save_state(state, checkpoint_name="summary")
+        iteration.summary = SummaryOutput.model_validate(output_json)
+        return await self._save_state(state, checkpoint_name="summary")
 
     async def _state_from_latest_succeeded_event(
         self,

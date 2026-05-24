@@ -2,12 +2,14 @@
 
 Purpose: give specialized planner/tool/summary steps one small execution
 contract without introducing a parallel runtime framework.
-Design link: replay-resume-agent-system-design.md sections 3 and 17.
+Design link: replay-resume-agent-system-design.md sections 3, 3.1 and 17.
 Non-goal: this module should not contain planner, tool, or LLM behavior.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from typing import Any, Protocol
 
 from pydantic import Field
@@ -81,3 +83,36 @@ class RuntimeStep(Protocol):
         state: AgentFlowState,
         context: RuntimeContext,
     ) -> StepResult: ...
+
+
+@dataclass
+class SequenceStepGroup:
+    """Composite step that runs children in sequence.
+
+    Design link: Section 3.1, step hierarchy.
+    Children are ChildStep instances or lazy callables — see ChildStep in step_runner.py.
+    Callables receive the current state and return a ChildStep (or None to skip).
+    This defers child construction until after prior steps have mutated state
+    (e.g., the subagents parallel group depends on the plan produced by the planner).
+    Non-goal: not a generic graph runner; ordered sequence only.
+    """
+
+    step_type: str
+    step_name: str
+    children: list = dc_field(default_factory=list)
+
+
+@dataclass
+class ParallelStepGroup:
+    """Composite step that runs children concurrently and merges results.
+
+    Design link: Section 3.1, step hierarchy.
+    Resume rule: children with a prior step_succeeded event are skipped.
+    children may be a static list[ChildStep] or a factory Callable[[AgentFlowState],
+    list[ChildStep]] evaluated with the current state at execution time.
+    Non-goal: not a fan-out/fan-in graph; flat parallel list only.
+    """
+
+    step_type: str
+    step_name: str
+    children: Any = dc_field(default_factory=list)
