@@ -765,12 +765,12 @@ Prefer small PRs in this order:
 2. Step events plus projection in memory repositories. *(done)*
 3. Checkpoint-aligned step success and event-based resume. *(done)*
 4. Tool validation models and registry. *(done)*
-5. Composite step hierarchy (SequenceStepGroup, ParallelStepGroup).
-6. Event-derived state (derive_state, _apply, remove on_success).
-7. Per-call durable tool execution.
-8. Waiting-for-user state and service/API/CLI input resume.
-9. Replay helpers.
-10. Evaluation helpers.
-11. Cleanup and naming alignment.
+5. Composite step hierarchy (SequenceStepGroup, ParallelStepGroup). *(done)*
+6. Event-derived state (derive_state, _apply, remove on_success). *(done)*
+7. Per-call durable tool execution. *(done)*
+8. Waiting-for-user state and service/API/CLI input resume. *(done)*
+9. Replay helpers. *(done)*
+10. Evaluation helpers. *(done)*
+11. Cleanup and naming alignment. *(done)*
 
 Each PR should explicitly state which design sections it implements and which sections remain future work.

@@ -15,6 +15,55 @@ Track unresolved questions that are useful before implementation work.
 
 ## Questions
 
+## Real Tool Execution in Subagent Path
+
+Status: open
+
+Question:
+- Should `LLMFlowSubagent` be replaced with the full planner→validate→execute→merge pipeline, and what is the right sequencing?
+
+Context:
+- `ToolCallStep`, `build_execute_tools_step`, `ValidatedToolCall`, and `ToolResult` are all implemented and durable.
+- `LLMFlowSubagent` currently bypasses this pipeline; it does one monolithic LLM call that acts as planner, tool executor, and summarizer combined.
+- Wiring real tools in requires concrete `ToolExecutor` implementations and connecting the planner's `PlanSubagentSelection` to validated tool calls.
+
+Source pointers:
+- `components/xagent/agent_flow/tools.py`
+- `components/xagent/agent_flow/tool_registry.py`
+- `components/xagent/agent_flow/subagents.py`
+
+## Timeout and Deadline Enforcement
+
+Status: open
+
+Question:
+- Which step types need `timeout_ms` / `deadline_ms` enforcement first, and how should `asyncio.wait_for` be wired into `StepRunner`?
+
+Context:
+- `RetryPolicy`, `StepExecutionPolicy`, and `RuntimeExecutionPolicy` models exist with `timeout_ms` and `deadline_ms` fields.
+- `StepRunner` does not currently wrap step execution with `asyncio.wait_for`; timeouts are not enforced.
+- LLM-backed steps (planner, subagent, summary) and tool calls are the highest-priority targets.
+
+Source pointers:
+- `components/xagent/agent_flow/step_runner.py`
+- `components/xagent/agent_flow/steps.py`
+
+## Evaluation Quality Metrics
+
+Status: open
+
+Question:
+- What ground-truth datasets or LLM judge approach should back content-quality scoring in `evaluation.py`?
+
+Context:
+- `evaluation.py` currently produces only structural metrics (counts, flags, decision sequences, failure modes).
+- Answer quality, grounding, tool selection quality, and unsupported-claim detection all require either reference answers or LLM judges.
+- The evaluator interface (`evaluate_state`, `evaluate_run`) is in place; scoring logic is the gap.
+
+Source pointers:
+- `components/xagent/agent_flow/evaluation.py`
+- `mementum/knowledge/replay-resume-agent-system-design.md` (Section 14)
+
 ## Logging and Tracing Policy
 
 Status: open
