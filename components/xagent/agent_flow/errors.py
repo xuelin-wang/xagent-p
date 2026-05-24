@@ -18,5 +18,23 @@ class StepRunnerError(AgentFlowError):
         self.error_json = error_json
 
 
+class StepWaiting(AgentFlowError):
+    """Raised internally when a durable step enters a waiting state."""
+
+    def __init__(
+        self,
+        *,
+        step: StepRecord,
+        output_json: dict[str, Any],
+        wait_spec: Any,
+        state: Any = None,
+    ):
+        super().__init__("Step is waiting.")
+        self.step = step
+        self.output_json = output_json
+        self.wait_spec = wait_spec
+        self.state = state
+
+
 class NonRetryableStepError(AgentFlowError):
     """Raise from a step function to stop retrying that step."""

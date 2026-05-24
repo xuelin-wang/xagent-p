@@ -13,7 +13,13 @@ from collections.abc import Mapping
 from typing import Any
 
 from xagent.agent_flow.config import AgentFlowAppConfig, SubagentConfig
-from xagent.agent_flow.models import AgentFlowIteration, AgentFlowState
+from xagent.agent_flow.messages import WaitStep
+from xagent.agent_flow.models import (
+    AgentFlowIteration,
+    AgentFlowState,
+    SummaryDecision,
+    WaitStepSpec,
+)
 from xagent.agent_flow.planner import PlannerExecutor, PlannerStep
 from xagent.agent_flow.step_runner import ChildStep
 from xagent.agent_flow.steps import (
@@ -107,7 +113,7 @@ def build_iteration_step(
     return SequenceStepGroup(
         step_type="sequence:iteration",
         step_name="iteration",
-        children=[planner_child, build_subagents_slot, summary_child],
+        children=[planner_child, build_subagents_slot, summary_child, _build_wait_slot],
     )
 
 
@@ -154,3 +160,25 @@ def _summary_input_json(state: AgentFlowState) -> dict[str, Any]:
             for name, result in iteration.subagent_results.items()
         },
     }
+
+
+def _build_wait_slot(state: AgentFlowState) -> ChildStep | None:
+    iteration = state.get_or_create_current_iteration()
+    summary = iteration.summary
+    if summary is None or summary.decision is not SummaryDecision.ASK_USER:
+        return None
+    if summary.user_request is None:
+        return None
+
+    spec = WaitStepSpec(
+        prompt=summary.user_request.prompt,
+        metadata={
+            "request_id": summary.user_request.request_id,
+            "required": summary.user_request.required,
+        },
+    )
+    return ChildStep(
+        step=WaitStep(spec=spec),
+        step_name=f"wait:{summary.user_request.request_id}",
+        input_json=spec.model_dump(mode="json"),
+    )

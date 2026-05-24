@@ -2,6 +2,7 @@ export type RunStatus =
   | 'pending'
   | 'running'
   | 'paused'
+  | 'waiting'
   | 'waiting_for_user'
   | 'failed'
   | 'completed'
@@ -11,6 +12,7 @@ export type FlowStage =
   | 'planning'
   | 'subagents'
   | 'summarizing'
+  | 'waiting'
   | 'waiting_for_user'
   | 'finalizing'
   | 'completed'
@@ -19,6 +21,7 @@ export type FlowStage =
 export type StepStatus =
   | 'pending'
   | 'running'
+  | 'waiting'
   | 'succeeded'
   | 'failed'
   | 'skipped'
@@ -80,9 +83,23 @@ export interface UserInputEvent {
   request_id: string
 }
 
+export interface WaitStepSpec {
+  prompt: string | null
+  metadata: Record<string, unknown>
+}
+
+export interface ConversationMessageEvent {
+  message_id: string
+  conversation_id: string
+  run_id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+}
+
 export interface AgentFlowState {
   run_id: string
   user_query: string
+  conversation_id: string
   case_id: string | null
   status: RunStatus
   current_stage: FlowStage
@@ -90,15 +107,17 @@ export interface AgentFlowState {
   iterations: AgentFlowIteration[]
   final_response: string | null
   pending_user_request: UserRequest | null
+  pending_wait: WaitStepSpec | null
   metadata: Record<string, unknown>
   errors: AgentError[]
   user_input_events: UserInputEvent[]
+  conversation_messages: ConversationMessageEvent[]
 }
 
 export interface StepAuditEntry {
   step_id: string
   step_name: string
-  step_type: 'planner' | 'subagent' | 'summary' | 'tool_call'
+  step_type: 'planner' | 'subagent' | 'summary' | 'tool_call' | 'wait' | 'message_input' | string
   iteration: number
   status: StepStatus
   attempt_count: number
@@ -116,4 +135,5 @@ export interface RunAuditRecord {
   current_iteration: number
   steps: StepAuditEntry[]
   user_input_events: UserInputEvent[]
+  conversation_messages: ConversationMessageEvent[]
 }

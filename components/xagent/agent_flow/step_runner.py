@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import Any, cast
 
-from xagent.agent_flow.errors import NonRetryableStepError, StepRunnerError
+from xagent.agent_flow.errors import NonRetryableStepError, StepRunnerError, StepWaiting
 from xagent.agent_flow.models import AgentFlowState, StepStatus
 from xagent.agent_flow.state_projection import _apply
 from xagent.agent_flow.steps import (
@@ -22,7 +22,7 @@ from xagent.agent_persistence.repositories import (
     StepRepository,
 )
 
-StepFunction = Callable[[StepRecord], Awaitable[dict[str, Any]]]
+StepFunction = Callable[[StepRecord], Awaitable[dict[str, Any] | StepResult]]
 
 
 @dataclass
@@ -123,11 +123,25 @@ class StepRunner:
                 current_step.step_id
             )
             try:
-                output_json = await self._run_with_policy(
+                raw_output = await self._run_with_policy(
                     fn(current_step),
                     policy=policy,
                     deadline_at=deadline_at,
                 )
+                if isinstance(raw_output, StepResult):
+                    output_json = raw_output.output_json
+                    if raw_output.wait_spec is not None:
+                        waiting_step = await self._step_repository.mark_step_waiting(
+                            current_step.step_id,
+                            output_json,
+                        )
+                        raise StepWaiting(
+                            step=waiting_step,
+                            output_json=output_json,
+                            wait_spec=raw_output.wait_spec,
+                        )
+                else:
+                    output_json = raw_output
             except NonRetryableStepError as exc:
                 error_json = self._error_json(exc, retryable=False)
                 failed_step = await self._step_repository.mark_step_failed(
@@ -139,6 +153,8 @@ class StepRunner:
                     step=failed_step,
                     error_json=error_json,
                 ) from exc
+            except StepWaiting:
+                raise
             except Exception as exc:
                 retryable = self._is_retryable(
                     current_step=current_step,
@@ -189,11 +205,11 @@ class StepRunner:
 
     async def _run_with_policy(
         self,
-        awaitable: Awaitable[dict[str, Any]],
+        awaitable: Awaitable[dict[str, Any] | StepResult],
         *,
         policy: StepExecutionPolicy,
         deadline_at: float | None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | StepResult:
         wait_seconds = self._wait_seconds(policy=policy, deadline_at=deadline_at)
         if wait_seconds is None:
             return await awaitable
@@ -250,8 +266,10 @@ class StepRunner:
         step: RuntimeStep,
         state: AgentFlowState,
         context: RuntimeContext,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | StepResult:
         result = await step.run(state=state, context=context)
+        if isinstance(result, StepResult):
+            return result
         return result.output_json
 
     async def execute_composite(
@@ -294,6 +312,15 @@ class StepRunner:
                 parent_step_id=step_record.step_id,
                 policy=context.execution_policy,
             )
+        except StepWaiting as exc:
+            await self._step_repository.mark_step_waiting(
+                step_record.step_id,
+                {
+                    "waiting_child_step_id": exc.step.step_id,
+                    "wait_spec": exc.output_json.get("wait_spec", {}),
+                },
+            )
+            raise
         except Exception as exc:
             error_json = self._error_json(exc, retryable=False)
             await self._step_repository.mark_step_failed(
@@ -349,7 +376,14 @@ class StepRunner:
                     continue
             else:
                 child = spec
-            result = await self._execute_child(child, current, context, parent_step_id)
+            try:
+                result = await self._execute_child(
+                    child, current, context, parent_step_id
+                )
+            except StepWaiting as exc:
+                if exc.state is None:
+                    exc.state = current
+                raise
             if result.state_after is not None:
                 current = result.state_after
         return StepResult(output_json={}, state_after=current)
@@ -405,14 +439,18 @@ class StepRunner:
                 step, state, effective_context, parent_step_id=parent_step_id
             )
 
-        output_json = await self.run_runtime_step(
-            state=state,
-            step_name=child.step_name,
-            input_json=input_json,
-            step=step,
-            context=effective_context,
-            parent_step_id=parent_step_id,
-        )
+        try:
+            output_json = await self.run_runtime_step(
+                state=state,
+                step_name=child.step_name,
+                input_json=input_json,
+                step=step,
+                context=effective_context,
+                parent_step_id=parent_step_id,
+            )
+        except StepWaiting as exc:
+            exc.state = _apply(state, child.step_name, exc.output_json)
+            raise
         return StepResult(
             output_json=output_json,
             state_after=_apply(state, child.step_name, output_json),

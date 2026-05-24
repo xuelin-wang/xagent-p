@@ -17,7 +17,7 @@ export function RunHeader({ state, onUpdated }: RunHeaderProps) {
   const [error, setError] = useState<string | null>(null)
 
   const isTerminal = TERMINAL.has(state.status)
-  const isWaiting = state.status === 'waiting_for_user'
+  const isWaiting = state.status === 'waiting' || state.status === 'waiting_for_user'
   const showResume = !isTerminal && !isWaiting
   const showSubmit = isWaiting
 

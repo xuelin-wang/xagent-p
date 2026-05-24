@@ -8,12 +8,19 @@ from xagent.agent_flow.service import AgentFlowService
 
 class AgentFlowRunRequest(BaseModel):
     query: str = Field(min_length=1, description="User query to answer.")
+    conversation_id: str | None = None
     case_id: str | None = None
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
 class AgentFlowUserInputRequest(BaseModel):
     content: str = Field(min_length=1)
+
+
+class AgentFlowConversationMessageRequest(BaseModel):
+    content: str = Field(min_length=1)
+    conversation_id: str | None = None
+    metadata: dict[str, object] = Field(default_factory=dict)
 
 
 def create_agent_flow_router(service: AgentFlowService) -> APIRouter:
@@ -27,7 +34,18 @@ def create_agent_flow_router(service: AgentFlowService) -> APIRouter:
     async def start_run(request: AgentFlowRunRequest) -> AgentFlowState:
         return await service.start_run(
             user_query=request.query,
+            conversation_id=request.conversation_id,
             case_id=request.case_id,
+            metadata=request.metadata,
+        )
+
+    @router.post("/messages", response_model=AgentFlowState)
+    async def handle_conversation_message(
+        request: AgentFlowConversationMessageRequest,
+    ) -> AgentFlowState:
+        return await service.handle_conversation_message(
+            content=request.content,
+            conversation_id=request.conversation_id,
             metadata=request.metadata,
         )
 

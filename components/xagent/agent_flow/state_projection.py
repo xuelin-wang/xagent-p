@@ -12,6 +12,7 @@ from typing import Any
 
 from xagent.agent_flow.models import (
     AgentFlowState,
+    ConversationMessageEvent,
     PlanOutput,
     StepStatus,
     SubagentResult,
@@ -45,6 +46,13 @@ def _apply(
     elif step_name.startswith("tool_call:"):
         tool_result = ToolResult.model_validate(output_json)
         iteration.tool_results[tool_result.tool_call_id] = tool_result
+    elif step_name.startswith("message_input:"):
+        message = ConversationMessageEvent.model_validate(output_json["message"])
+        state.conversation_messages.append(message)
+        if message.role == "user":
+            state.user_query = message.content
+    elif step_name.startswith("wait:"):
+        state.pending_wait = None
 
     return state
 

@@ -10,6 +10,7 @@ interface AuditRowProps {
 const statusBar: Record<StepStatus, string> = {
   pending: 'bg-gray-500',
   running: 'bg-amber-500',
+  waiting: 'bg-purple-500',
   succeeded: 'bg-green-500',
   failed: 'bg-red-500',
   skipped: 'bg-slate-500',

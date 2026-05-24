@@ -210,11 +210,11 @@ async def _service_resume_returns_waiting_state_without_rerun() -> None:
         summary=FakeSummaryExecutor(decision=SummaryDecision.ASK_USER),
     )
     waiting = await service.start_run(user_query="diagnose no start")
-    assert waiting.status is RunStatus.WAITING_FOR_USER
+    assert waiting.status is RunStatus.WAITING
 
     resumed = await service.resume_run(waiting.run_id)
 
-    assert resumed.status is RunStatus.WAITING_FOR_USER
+    assert resumed.status is RunStatus.WAITING
     assert resumed.run_id == waiting.run_id
 
 
@@ -254,7 +254,7 @@ async def _service_submit_user_input_continues_waiting_run() -> None:
     )
 
     waiting = await service.start_run(user_query="diagnose no start")
-    assert waiting.status is RunStatus.WAITING_FOR_USER
+    assert waiting.status is RunStatus.WAITING
 
     result = await service.submit_user_input(waiting.run_id, "It's a 2020 model.")
 
@@ -262,3 +262,87 @@ async def _service_submit_user_input_continues_waiting_run() -> None:
     assert result.final_response == "completed after user input"
     assert len(result.user_input_events) == 1
     assert result.user_input_events[0].content == "It's a 2020 model."
+    assert len(result.conversation_messages) == 1
+    assert result.conversation_messages[0].content == "It's a 2020 model."
+
+
+def test_service_conversation_message_starts_new_conversation() -> None:
+    asyncio.run(_service_conversation_message_starts_new_conversation())
+
+
+async def _service_conversation_message_starts_new_conversation() -> None:
+    service = AgentFlowService.in_memory(
+        _config(),
+        planner=FakePlannerExecutor(selection_names=["manuals"]),
+        summary=FakeSummaryExecutor(),
+    )
+
+    result = await service.handle_conversation_message(content="diagnose no start")
+
+    assert result.status is RunStatus.COMPLETED
+    assert result.conversation_id.startswith("conv_")
+    assert len(result.conversation_messages) == 1
+    assert result.conversation_messages[0].content == "diagnose no start"
+
+
+def test_service_conversation_message_resumes_waiting_conversation() -> None:
+    asyncio.run(_service_conversation_message_resumes_waiting_conversation())
+
+
+async def _service_conversation_message_resumes_waiting_conversation() -> None:
+    class _AskThenFinalSummary:
+        def __init__(self) -> None:
+            self._called = 0
+
+        async def summarize(
+            self,
+            *,
+            state: AgentFlowState,
+            iteration: object,
+        ) -> SummaryOutput:
+            self._called += 1
+            if self._called == 1:
+                return SummaryOutput(
+                    decision=SummaryDecision.ASK_USER,
+                    user_request=UserRequest(
+                        request_id="req_1",
+                        prompt="What year is the vehicle?",
+                    ),
+                )
+            return SummaryOutput(
+                decision=SummaryDecision.FINAL,
+                answer_draft=f"completed with {state.user_query}",
+            )
+
+    service = AgentFlowService.in_memory(
+        _config(),
+        planner=FakePlannerExecutor(selection_names=["manuals"]),
+        summary=_AskThenFinalSummary(),
+    )
+    waiting = await service.start_run(
+        user_query="diagnose no start",
+        conversation_id="conv_123",
+    )
+
+    result = await service.handle_conversation_message(
+        conversation_id="conv_123",
+        content="It's a 2020 model.",
+    )
+
+    assert waiting.status is RunStatus.WAITING
+    assert result.status is RunStatus.COMPLETED
+    assert result.run_id == waiting.run_id
+    assert result.final_response == "completed with It's a 2020 model."
+    assert len(result.conversation_messages) == 1
+
+    audit = await service.get_audit_record(result.run_id)
+    step_names = [step.step_name for step in audit.steps]
+    wait_index = step_names.index("wait:req_1")
+    message_index = next(
+        index
+        for index, step_name in enumerate(step_names)
+        if step_name.startswith("message_input:")
+    )
+    assert wait_index < message_index
+    assert audit.steps[wait_index].status.value == "succeeded"
+    assert audit.steps[message_index].output_json is not None

@@ -12,6 +12,8 @@ from xagent.agent_flow.models import AgentFlowState, StepStatus
 class StepEventType(StrEnum):
     CREATED = "step_created"
     STARTED = "step_started"
+    WAITING = "step_waiting"
+    RESUMED = "step_resumed"
     SUCCEEDED = "step_succeeded"
     FAILED = "step_failed"
 
@@ -111,6 +113,15 @@ class StepRepository(Protocol):
         output_json: dict[str, Any],
         checkpoint_id: str | None = None,
     ) -> StepRecord: ...
+
+    async def mark_step_waiting(
+        self,
+        step_id: str,
+        output_json: dict[str, Any],
+        checkpoint_id: str | None = None,
+    ) -> StepRecord: ...
+
+    async def mark_step_resumed(self, step_id: str) -> StepRecord: ...
 
     async def mark_step_failed(
         self,
