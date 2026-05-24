@@ -83,6 +83,7 @@ class InMemoryStepRepository:
         input_json: dict[str, Any],
         max_attempts: int,
         idempotency_key: str,
+        parent_step_id: str | None = None,
     ) -> StepRecord:
         existing_id = self._step_ids_by_key.get((run_id, iteration, step_name))
         if existing_id is not None:
@@ -102,6 +103,7 @@ class InMemoryStepRepository:
             input_json=input_json.copy(),
             max_attempts=max_attempts,
             idempotency_key=idempotency_key,
+            parent_step_id=parent_step_id,
         )
         self._steps_by_id[step.step_id] = step
         self._step_ids_by_key[(run_id, iteration, step_name)] = step.step_id
@@ -167,6 +169,16 @@ class InMemoryStepRepository:
             step.model_copy(deep=True)
             for step in self._steps_by_id.values()
             if step.run_id == run_id and step.iteration == iteration
+        ]
+
+    async def get_children_for_step(
+        self,
+        parent_step_id: str,
+    ) -> list[StepRecord]:
+        return [
+            step.model_copy(deep=True)
+            for step in self._steps_by_id.values()
+            if step.parent_step_id == parent_step_id
         ]
 
     async def append_step_event(self, event: StepEvent) -> StepEvent:
@@ -251,6 +263,7 @@ class InMemoryStepRepository:
             checkpoint_id=step.checkpoint_id,
             max_attempts=step.max_attempts,
             idempotency_key=step.idempotency_key,
+            parent_step_id=step.parent_step_id,
         )
         self._events.append(event)
         self._event_ids.add(event.event_id)
@@ -278,6 +291,7 @@ class InMemoryStepRepository:
                     input_json=event.input_json.copy(),
                     max_attempts=event.max_attempts,
                     idempotency_key=event.idempotency_key,
+                    parent_step_id=event.parent_step_id,
                 )
 
             status = {
@@ -308,6 +322,7 @@ class InMemoryStepRepository:
                     "attempt_count": max(current.attempt_count, event.attempt_index),
                     "max_attempts": event.max_attempts,
                     "idempotency_key": event.idempotency_key,
+                    "parent_step_id": event.parent_step_id or current.parent_step_id,
                 },
                 deep=True,
             )

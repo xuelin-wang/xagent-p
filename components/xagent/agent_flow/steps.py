@@ -68,6 +68,9 @@ class RuntimeContext(StrictConfigModel):
 
 class StepResult(StrictConfigModel):
     output_json: dict[str, Any] = Field(default_factory=dict)
+    # Populated by the executor after deriving state from events (Section 6.1).
+    # None until the executor fills it in; AtomicStep.run() never sets this.
+    state_after: AgentFlowState | None = None
 
 
 class RuntimeStep(Protocol):

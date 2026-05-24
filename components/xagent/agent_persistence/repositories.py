@@ -61,6 +61,8 @@ class StepRecord(BaseModel):
     max_attempts: int = 1
     idempotency_key: str
     checkpoint_id: str | None = None
+    # Set when this step is a child of a composite step (Section 3.1).
+    parent_step_id: str | None = None
 
 
 class CheckpointRecord(BaseModel):
@@ -96,6 +98,7 @@ class StepRepository(Protocol):
         input_json: dict[str, Any],
         max_attempts: int,
         idempotency_key: str,
+        parent_step_id: str | None = None,
     ) -> StepRecord: ...
 
     async def mark_step_running(self, step_id: str) -> StepRecord: ...
@@ -117,6 +120,11 @@ class StepRepository(Protocol):
         self,
         run_id: str,
         iteration: int,
+    ) -> list[StepRecord]: ...
+
+    async def get_children_for_step(
+        self,
+        parent_step_id: str,
     ) -> list[StepRecord]: ...
 
     async def append_step_event(self, event: StepEvent) -> StepEvent: ...
