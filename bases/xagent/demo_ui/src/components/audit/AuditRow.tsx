@@ -1,9 +1,15 @@
-import type { StepAuditEntry, UserInputEvent, StepStatus } from '../../types/agent_flow'
+import type {
+  ConversationMessageEvent,
+  StepAuditEntry,
+  StepStatus,
+  UserInputEvent,
+} from '../../types/agent_flow'
 import { StatusBadge } from '../shared/StatusBadge'
 
 interface AuditRowProps {
   step?: StepAuditEntry
   inputEvent?: UserInputEvent
+  messageEvent?: ConversationMessageEvent
   isNew: boolean
 }
 
@@ -20,8 +26,27 @@ function copyText(text: string) {
   void navigator.clipboard.writeText(text)
 }
 
-export function AuditRow({ step, inputEvent, isNew }: AuditRowProps) {
+export function AuditRow({ step, inputEvent, messageEvent, isNew }: AuditRowProps) {
   const animClass = isNew ? 'animate-slide-up' : ''
+
+  if (messageEvent) {
+    return (
+      <div
+        className={`flex items-start gap-2 px-3 py-2 border-b border-gray-800 hover:bg-gray-800/40 ${animClass}`}
+      >
+        <div className="w-1 self-stretch rounded bg-blue-500 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <span className="text-xs font-mono text-blue-400 mr-2">
+            message
+          </span>
+          <span className="text-xs text-gray-300 truncate">
+            {messageEvent.content.slice(0, 80)}
+            {messageEvent.content.length > 80 ? '…' : ''}
+          </span>
+        </div>
+      </div>
+    )
+  }
 
   if (inputEvent) {
     return (
@@ -45,6 +70,10 @@ export function AuditRow({ step, inputEvent, isNew }: AuditRowProps) {
   if (!step) return null
 
   const bar = statusBar[step.status] ?? 'bg-gray-500'
+  const message =
+    step.step_type === 'message_input'
+      ? (step.output_json?.message as { content?: string } | undefined)
+      : undefined
 
   return (
     <div
@@ -69,6 +98,11 @@ export function AuditRow({ step, inputEvent, isNew }: AuditRowProps) {
         )}
         {step.attempt_count > 1 && (
           <span className="text-xs text-gray-500">×{step.attempt_count} attempts</span>
+        )}
+        {message?.content && (
+          <span className="basis-full text-xs text-gray-400 truncate">
+            {message.content}
+          </span>
         )}
       </div>
     </div>

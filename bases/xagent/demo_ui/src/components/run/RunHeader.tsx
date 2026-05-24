@@ -69,7 +69,7 @@ export function RunHeader({ state, onUpdated }: RunHeaderProps) {
               onClick={() => setShowInput((v) => !v)}
               className="px-3 py-1 text-xs bg-purple-700 hover:bg-purple-600 rounded text-white transition-colors"
             >
-              Submit Input
+              Send Message
             </button>
           )}
         </div>
@@ -88,6 +88,10 @@ export function RunHeader({ state, onUpdated }: RunHeaderProps) {
         </div>
       )}
 
+      <div className="mt-2 font-mono text-xs text-gray-600 truncate">
+        conversation: {state.conversation_id}
+      </div>
+
       {error && (
         <p className="text-xs text-red-400 mt-2">{error}</p>
       )}
@@ -95,7 +99,7 @@ export function RunHeader({ state, onUpdated }: RunHeaderProps) {
       {showInput && (
         <div className="mt-3">
           <SubmitInputForm
-            runId={state.run_id}
+            conversationId={state.conversation_id}
             onInputSubmitted={handleInputSubmitted}
             onCancel={() => setShowInput(false)}
           />
