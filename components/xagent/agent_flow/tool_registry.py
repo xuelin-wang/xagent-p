@@ -42,6 +42,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from xagent.agent_flow.models import (
+    ToolResult as ToolResult,  # re-exported for backward compat
+)
 from xagent.agent_flow.steps import RetryPolicy, StepExecutionPolicy
 from xagent.config import StrictConfigModel
 
@@ -99,17 +102,6 @@ class ValidatedToolCall(BaseModel):
 class RejectedToolCall(BaseModel):
     tool_name: str
     reason: str
-
-
-class ToolResult(BaseModel):
-    tool_call_id: str
-    tool_name: str
-    status: Literal["succeeded", "failed", "timed_out", "skipped"]
-    output_ref: str | None = None
-    error_ref: str | None = None
-    retryable: bool = False
-    attempt_count: int = 0
-    elapsed_ms: int | None = None
 
 
 class EvidenceItem(BaseModel):

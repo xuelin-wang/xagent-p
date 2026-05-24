@@ -60,6 +60,17 @@ class PlanOutput(BaseModel):
     constraints: dict[str, Any] = Field(default_factory=dict)
 
 
+class ToolResult(BaseModel):
+    tool_call_id: str
+    tool_name: str
+    status: Literal["succeeded", "failed", "timed_out", "skipped"]
+    output_ref: str | None = None
+    error_ref: str | None = None
+    retryable: bool = False
+    attempt_count: int = 0
+    elapsed_ms: int | None = None
+
+
 class ToolCallRecord(BaseModel):
     tool_name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
@@ -91,6 +102,7 @@ class AgentFlowIteration(BaseModel):
     iteration: int
     plan: PlanOutput | None = None
     subagent_results: dict[str, SubagentResult] = Field(default_factory=dict)
+    tool_results: dict[str, ToolResult] = Field(default_factory=dict)
     summary: SummaryOutput | None = None
     errors: list[AgentError] = Field(default_factory=list)
 

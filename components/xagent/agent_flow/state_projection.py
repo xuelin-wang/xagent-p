@@ -16,6 +16,7 @@ from xagent.agent_flow.models import (
     StepStatus,
     SubagentResult,
     SummaryOutput,
+    ToolResult,
 )
 from xagent.agent_persistence.repositories import StepRecord
 
@@ -41,6 +42,9 @@ def _apply(
             iteration.errors.append(result.error)
     elif step_name == "summary":
         iteration.summary = SummaryOutput.model_validate(output_json)
+    elif step_name.startswith("tool_call:"):
+        result = ToolResult.model_validate(output_json)
+        iteration.tool_results[result.tool_call_id] = result
 
     return state
 
