@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -10,6 +11,7 @@ class RunStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     PAUSED = "paused"
+    WAITING_FOR_USER = "waiting_for_user"
     FAILED = "failed"
     COMPLETED = "completed"
 
@@ -19,6 +21,7 @@ class FlowStage(StrEnum):
     PLANNING = "planning"
     SUBAGENTS = "subagents"
     SUMMARIZING = "summarizing"
+    WAITING_FOR_USER = "waiting_for_user"
     FINALIZING = "finalizing"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -35,6 +38,7 @@ class StepStatus(StrEnum):
 class SummaryDecision(StrEnum):
     FINAL = "final"
     REPLAN = "replan"
+    ASK_USER = "ask_user"
     FAIL = "fail"
 
 
@@ -60,6 +64,17 @@ class PlanOutput(BaseModel):
     constraints: dict[str, Any] = Field(default_factory=dict)
 
 
+class ToolResult(BaseModel):
+    tool_call_id: str
+    tool_name: str
+    status: Literal["succeeded", "failed", "timed_out", "skipped"]
+    output_ref: str | None = None
+    error_ref: str | None = None
+    retryable: bool = False
+    attempt_count: int = 0
+    elapsed_ms: int | None = None
+
+
 class ToolCallRecord(BaseModel):
     tool_name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
@@ -79,18 +94,34 @@ class SubagentResult(BaseModel):
     error: AgentError | None = None
 
 
+class UserRequest(BaseModel):
+    request_id: str
+    prompt: str
+    required: bool = True
+
+
+class UserInputEvent(BaseModel):
+    event_id: str
+    run_id: str
+    request_id: str
+    content: str
+    occurred_at: datetime
+
+
 class SummaryOutput(BaseModel):
     decision: SummaryDecision
     answer_draft: str | None = None
     rationale: str = ""
     missing_information: list[str] = Field(default_factory=list)
     suggested_replan: dict[str, Any] | None = None
+    user_request: UserRequest | None = None
 
 
 class AgentFlowIteration(BaseModel):
     iteration: int
     plan: PlanOutput | None = None
     subagent_results: dict[str, SubagentResult] = Field(default_factory=dict)
+    tool_results: dict[str, ToolResult] = Field(default_factory=dict)
     summary: SummaryOutput | None = None
     errors: list[AgentError] = Field(default_factory=list)
 
@@ -106,6 +137,9 @@ class AgentFlowState(BaseModel):
 
     iterations: list[AgentFlowIteration] = Field(default_factory=list)
     final_response: str | None = None
+
+    pending_user_request: UserRequest | None = None
+    user_input_events: list[UserInputEvent] = Field(default_factory=list)
 
     errors: list[AgentError] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

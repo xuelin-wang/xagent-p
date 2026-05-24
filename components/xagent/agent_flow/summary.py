@@ -9,7 +9,9 @@ from xagent.agent_flow.models import (
     AgentFlowState,
     SummaryDecision,
     SummaryOutput,
+    UserRequest,
 )
+from xagent.agent_flow.steps import RuntimeContext, StepResult
 
 
 class SummaryExecutor(Protocol):
@@ -19,6 +21,28 @@ class SummaryExecutor(Protocol):
         state: AgentFlowState,
         iteration: AgentFlowIteration,
     ) -> SummaryOutput: ...
+
+
+class SummaryStep:
+    """RuntimeStep adapter for summary executors."""
+
+    step_type = "summary"
+
+    def __init__(self, *, executor: SummaryExecutor):
+        self._executor = executor
+
+    async def run(
+        self,
+        state: AgentFlowState,
+        context: RuntimeContext,
+    ) -> StepResult:
+        _ = context
+        iteration = state.get_or_create_current_iteration()
+        summary = await self._executor.summarize(
+            state=state,
+            iteration=iteration,
+        )
+        return StepResult(output_json=summary.model_dump(mode="json"))
 
 
 class FakeSummaryExecutor:
@@ -51,6 +75,14 @@ class FakeSummaryExecutor:
                 rationale="Deterministic fake summary requested replan.",
                 missing_information=["More fake evidence required."],
                 suggested_replan={"reason": "fake_replan"},
+            )
+        if self._decision is SummaryDecision.ASK_USER:
+            return SummaryOutput(
+                decision=SummaryDecision.ASK_USER,
+                user_request=UserRequest(
+                    request_id="req_fake",
+                    prompt="Please provide more information.",
+                ),
             )
         return SummaryOutput(
             decision=SummaryDecision.FAIL,

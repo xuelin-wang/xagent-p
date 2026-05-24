@@ -133,9 +133,18 @@ class AgentFlowService:
     async def resume_run(self, run_id: str) -> AgentFlowState:
         checkpoint = await self._checkpoint_repository.get_latest_checkpoint(run_id)
         state = checkpoint or await self._run_repository.get_run_state(run_id)
-        if state.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
+        if state.status in {
+            RunStatus.COMPLETED,
+            RunStatus.FAILED,
+            RunStatus.WAITING_FOR_USER,
+        }:
             return state
         return await self._runtime.resume(state)
+
+    async def submit_user_input(self, run_id: str, user_input: str) -> AgentFlowState:
+        checkpoint = await self._checkpoint_repository.get_latest_checkpoint(run_id)
+        state = checkpoint or await self._run_repository.get_run_state(run_id)
+        return await self._runtime.resume_with_input(state, user_input)
 
 
 class AgentFlowExecutorFactory:

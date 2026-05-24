@@ -405,7 +405,118 @@ Done when:
 
 - Tool calls can be planned and validated without executing external tools.
 
-## Stage 6. Implement per-call tool durability
+## Stage 6. Introduce composite step hierarchy
+
+Goal: express workflows as trees of atomic and composite steps so the executor stays generic and workflow structure is configuration, not hard-coded runtime logic.
+
+Relevant design sections:
+
+- Section 3, step-based runtime
+- Section 3.1, step hierarchy
+- Section 11, per-call tool execution durability
+
+Likely files:
+
+```text
+components/xagent/agent_flow/steps.py
+components/xagent/agent_flow/step_runner.py
+components/xagent/agent_flow/workflow.py
+components/xagent/agent_flow/runtime.py
+test/components/xagent/agent_flow/test_steps.py
+test/components/xagent/agent_flow/test_runtime.py
+```
+
+Actions:
+
+- Add `SequenceStepGroup` and `ParallelStepGroup` composite step types to `steps.py`.
+- Update `StepExecutor` (currently `StepRunner`) to handle all three cases: atomic, sequence, parallel.
+- Composite steps create their own step record with `parent_step_id` on each child.
+- Express the existing planner-subagents-summary loop as a `SequenceStepGroup` workflow tree in `workflow.py`.
+- Replace `_run_loop / _run_planner / _run_subagents / _run_summary` with the workflow tree execution.
+- `runtime.py` shrinks to: build the workflow tree, hand it to the executor, return the result.
+
+Critical notes:
+
+- A composite step is just another step from the executor's perspective — same contract, same event/checkpoint sequence.
+- `ParallelStepGroup` children run concurrently; each appends its own step events independently.
+- Resume within a composite: skip already-succeeded children, run remaining. This is the same rule as section 11, generalised.
+- Do not build a generic graph runtime. `SequenceStepGroup` and `ParallelStepGroup` cover all current needs.
+- The `asyncio.gather` in `_run_subagents` is the embryonic `ParallelStepGroup`; extract it.
+
+Tests:
+
+- `SequenceStepGroup` runs children in order and passes derived state to each.
+- `ParallelStepGroup` runs children concurrently; all results are present in output.
+- Resume of a partially completed `ParallelStepGroup` skips already-succeeded children.
+- A composite step creates its own step record and events.
+- Nested composites execute correctly.
+- Existing runtime happy-path and replan tests still pass.
+
+Done when:
+
+- The planner-subagents-summary loop is expressed as a composite step tree.
+- `runtime.py` contains no per-phase orchestration logic.
+
+## Stage 7. Replace in-place state mutation with event-derived state
+
+Goal: make `AgentState` a pure projection derived from the step event ledger, eliminating all in-place mutation, `on_success` callbacks, and shared-state locks.
+
+Relevant design sections:
+
+- Section 5, append-only step event ledger
+- Section 6, serializable state
+- Section 6.1, state as a derived projection
+
+Likely files:
+
+```text
+components/xagent/agent_flow/state_projection.py
+components/xagent/agent_flow/steps.py
+components/xagent/agent_flow/step_runner.py
+components/xagent/agent_flow/runtime.py
+components/xagent/agent_persistence/repositories.py
+components/xagent/agent_persistence/memory.py
+test/components/xagent/agent_flow/test_state_projection.py
+test/components/xagent/agent_flow/test_runtime.py
+```
+
+Actions:
+
+- Add `state_projection.py` with `derive_state(run_id, events) -> AgentFlowState` and `_apply(state, event) -> AgentFlowState`.
+- `derive_state` is a pure fold: sorted events, only `step_succeeded` events mutate state.
+- `_apply` maps step names to state fields (planner → `iteration.plan`, subagent → `iteration.subagent_results`, summary → `iteration.summary`, etc.).
+- Add `state_after: AgentFlowState` to `StepResult` so `SequenceStepGroup` can pass derived state to the next child without an extra event-log read.
+- Remove all `on_success` callbacks from `StepRunner` / `StepExecutor` and `runtime.py`.
+- Remove `_state_commit_lock`.
+- Promote `_hydrate_succeeded_step` to `_apply` in `state_projection.py` and use it during normal execution, not just resume.
+- Update resume to use `derive_state` as its starting point (unified with normal execution).
+
+Critical notes:
+
+- `derive_state` must be a pure function — no I/O, no side effects.
+- `_apply` is where domain knowledge lives (step name → state field). It must be explicit and tested.
+- Checkpoints remain as materialized snapshots; resume loads the latest checkpoint as a base and replays only events appended after it.
+- If no checkpoint is available, `derive_state` over the full event log is always correct.
+- The existing `_hydrate_succeeded_step` is already the right shape; this stage promotes it.
+
+Tests:
+
+- `derive_state([])` returns initial state.
+- `derive_state` with planner `step_succeeded` event populates `iteration.plan`.
+- `derive_state` with multiple subagent `step_succeeded` events merges all results.
+- `derive_state` with summary `step_succeeded` sets `iteration.summary`; `REPLAN` increments `current_iteration`.
+- `derive_state(events[:n])` gives the exact historical state at step `n`.
+- Normal execution and resume produce identical state from identical events.
+- `on_success` callbacks are gone — grep confirms no `on_success` references remain.
+- State is never mutated after derivation — `AgentFlowState` objects returned by `_apply` are fresh copies.
+
+Done when:
+
+- `AgentFlowState` is never directly mutated by the runtime or executor.
+- State is always derived from the ordered step event ledger.
+- `on_success`, `_state_commit_lock`, and `_hydrate_succeeded_step` are removed.
+
+## Stage 8. Implement per-call tool durability
 
 Goal: make each validated tool call its own durable child step.
 
@@ -464,7 +575,7 @@ Done when:
 
 - Partial tool execution is safe to resume without duplicate successful calls.
 
-## Stage 7. Add waiting-for-user flow
+## Stage 9. Add waiting-for-user flow
 
 Goal: distinguish final responses from runs paused for external user input.
 
@@ -472,6 +583,7 @@ Relevant design sections:
 
 - Section 2, minimal state machine
 - Section 6, serializable state
+- Section 6.1, state as a derived projection
 - Section 13, pause and resume
 - Section 16, minimal durable data model
 
@@ -518,7 +630,7 @@ Done when:
 
 - Waiting runs are auditable and resumable with explicit user input records.
 
-## Stage 8. Add replay helpers
+## Stage 10. Add replay helpers
 
 Goal: provide audit playback and deterministic replay over recorded events, checkpoints, and artifacts.
 
@@ -561,7 +673,7 @@ Done when:
 
 - A recorded run can be explained without rerunning the agent.
 
-## Stage 9. Add evaluation entrypoints
+## Stage 11. Add evaluation entrypoints
 
 Goal: score recorded runs without requiring agent re-execution.
 
@@ -601,7 +713,7 @@ Done when:
 
 - Recorded runs can be scored with deterministic local tests.
 
-## Stage 10. Final integration and cleanup
+## Stage 12. Final integration and cleanup
 
 Goal: remove compatibility paths only after the new event/checkpoint/step model is covered.
 
@@ -643,20 +755,22 @@ Tests:
 Done when:
 
 - The implementation matches the design sections listed above.
-- Agent-flow tests cover checkpoint-aligned completion, append-only events, per-call tool durability, waiting-for-user resume, and replay.
+- Agent-flow tests cover composite step execution, event-derived state, checkpoint-aligned completion, append-only events, per-call tool durability, waiting-for-user resume, and replay.
 
 ## Suggested PR slicing
 
 Prefer small PRs in this order:
 
-1. Step contract and planner adaptation.
-2. Step events plus projection in memory repositories.
-3. Checkpoint-aligned step success and event-based resume.
-4. Tool validation models and registry.
-5. Per-call durable tool execution.
-6. Waiting-for-user state and service/API/CLI input resume.
-7. Replay helpers.
-8. Evaluation helpers.
-9. Cleanup and naming alignment.
+1. Step contract and planner adaptation. *(done)*
+2. Step events plus projection in memory repositories. *(done)*
+3. Checkpoint-aligned step success and event-based resume. *(done)*
+4. Tool validation models and registry. *(done)*
+5. Composite step hierarchy (SequenceStepGroup, ParallelStepGroup). *(done)*
+6. Event-derived state (derive_state, _apply, remove on_success). *(done)*
+7. Per-call durable tool execution. *(done)*
+8. Waiting-for-user state and service/API/CLI input resume. *(done)*
+9. Replay helpers. *(done)*
+10. Evaluation helpers. *(done)*
+11. Cleanup and naming alignment. *(done)*
 
 Each PR should explicitly state which design sections it implements and which sections remain future work.

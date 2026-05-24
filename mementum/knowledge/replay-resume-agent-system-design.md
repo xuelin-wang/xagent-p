@@ -133,6 +133,75 @@ class RuntimeStep(Protocol):
 
 This avoids special framework logic for planner, tools, merge, and response. They are all just steps.
 
+## 3.1 Step hierarchy
+
+Steps form a two-level hierarchy:
+
+```text
+Step
+  ├── AtomicStep     — leaf; owns a single unit of work, implements RuntimeStep.run()
+  └── CompositeStep
+        ├── SequenceStepGroup  — runs children in order, threads state through each
+        └── ParallelStepGroup  — runs children concurrently, merges results
+```
+
+Every node — atomic or composite — follows the same execution contract and creates its own step record, lifecycle events, and checkpoint. The executor does not need to know whether it is running a leaf or a composite.
+
+```python
+class SequenceStepGroup:
+    step_type: str
+    children: list[Step]
+
+    async def run(self, state: AgentState, context: RuntimeContext) -> StepResult:
+        current = state
+        for child in self.children:
+            result = await context.executor.execute(child, current, context)
+            current = result.state_after
+        return StepResult(state_after=current, output_json=...)
+
+
+class ParallelStepGroup:
+    step_type: str
+    children: list[Step]
+
+    async def run(self, state: AgentState, context: RuntimeContext) -> StepResult:
+        results = await asyncio.gather(*[
+            context.executor.execute(child, state, context)
+            for child in self.children
+        ])
+        merged = _merge_parallel_results(state, results)
+        return StepResult(state_after=merged, output_json=...)
+```
+
+Workflows are trees of steps expressed as configuration. The planner-subagents-summary pattern becomes:
+
+```text
+AgentFlowWorkflow  (SequenceStepGroup)
+  ├── PlannerStep                     (AtomicStep)
+  ├── SubagentsStep                   (ParallelStepGroup)
+  │     ├── SubagentStep("manuals")   (AtomicStep)
+  │     └── SubagentStep("history")  (AtomicStep)
+  └── SummaryStep                     (AtomicStep)
+```
+
+### Resume within composite steps
+
+A composite step is itself durable. Its children are child steps with `parent_step_id` linking them to the composite. Resume rule:
+
+```text
+for each child step in the composite:
+  if child step_succeeded event exists → reuse recorded result, skip execution
+  else → execute or retry according to policy
+```
+
+This is the same rule as section 11 (per-call tool execution durability) generalised to any parallel group. If three parallel children run and one succeeds before a crash, resume reuses that result and only runs the remaining two.
+
+### Why this keeps the core minimal
+
+A `SequenceStepGroup` or `ParallelStepGroup` is just another step from the executor's perspective. The executor does not need special logic for "planner runs first, then subagents in parallel, then summary" — that structure is expressed in the workflow tree, not in the runtime. Changing the order of phases or adding a new workflow requires changing the workflow definition, not the executor.
+
+The hard-coded `_run_loop / _run_planner / _run_subagents / _run_summary` methods in a runtime class are the anti-pattern this hierarchy replaces. Those methods contain both orchestration logic and state mutation that belongs inside the composite step's `run()` method.
+
 ---
 
 # 4. Core reusable components
@@ -313,6 +382,84 @@ replayable
 resumable
 testable
 ```
+
+## 6.1 State as a derived projection
+
+`AgentState` is a pure projection derived by folding the ordered step event ledger. It is never directly mutated by the runtime.
+
+```text
+StepEvent ledger (append-only, source of truth)
+    │
+    │  derive_state(events) — pure fold
+    ▼
+AgentState (projection, never mutated in place)
+    │
+    │  optional materialized snapshot for fast resume
+    ▼
+CheckpointRecord
+```
+
+The derivation is a pure function over the event log:
+
+```python
+def derive_state(run_id: str, events: list[StepEvent]) -> AgentState:
+    state = AgentState(run_id=run_id, ...)
+    for event in sorted(events, key=lambda e: e.sequence_index):
+        if event.event_type == "step_succeeded":
+            state = _apply(state, event)
+    return state
+```
+
+`_apply` maps each step type to the corresponding state change:
+
+```text
+planner step_succeeded       → iteration.plan
+subagent step_succeeded      → iteration.subagent_results[name]
+summary step_succeeded       → iteration.summary; if REPLAN → increment iteration
+tool_call step_succeeded     → state.tool_results
+validate step_succeeded      → state.validated_tool_calls / rejected_tool_calls
+decide step_succeeded        → state.decision
+response step_succeeded      → state.final_response
+user_input_received          → state.user_input_events
+```
+
+This replaces the `on_success` callback pattern. Instead of:
+
+```text
+execute step
+  → mutate state via on_success callback    ← side effect on shared object
+  → save checkpoint of mutated state
+```
+
+The executor does:
+
+```text
+execute step
+  → append step_succeeded event with output_ref   (already happens today)
+  → state = derive_state(events)                  (pure fold, no mutation)
+  → save checkpoint(state)                        (materialized snapshot)
+  → link checkpoint_id to step_succeeded event
+```
+
+### Consequences
+
+**`on_success` callbacks and shared-state locks are removed.** There is no shared mutable object to protect. Each step appends its event; the executor derives state after each event.
+
+**`StepResult` carries `state_after`.** For `SequenceStepGroup`, the derived state needs to reach the next child without another event-log read. `StepResult.state_after` carries it:
+
+```python
+class StepResult:
+    output_json: dict[str, Any]
+    state_after: AgentState
+```
+
+For `ParallelStepGroup`, each child appends its own event independently. The parent merges by folding all child events after all children complete — no locking required.
+
+**Checkpoints are materialized snapshots, not the primary truth.** Resume loads the latest checkpoint as a starting point, then replays only events that occurred after it. If no checkpoint is available, deriving state from the full event log is always correct.
+
+**Replay and normal execution share one code path.** `derive_state(events[:n])` gives the exact historical state at any point. Audit playback is the same function with a different event slice. There is no separate replay mechanism.
+
+**`_hydrate_succeeded_step` is the embryonic form of `_apply`.** The existing resume path already derives state from step records. Promoting this to the primary path during normal execution is the only structural change required.
 
 ---
 
@@ -1000,18 +1147,20 @@ The current `components/xagent/agent_flow/` package remains the owner of orchest
 
 ```text
 components/xagent/agent_flow/
-  runtime.py          # fixed state machine and run orchestration
-  service.py          # application-facing start/get/resume facade
-  models.py           # AgentState, decisions, tool calls, user requests
-  steps.py            # RuntimeStep protocol and common StepResult types
-  step_executor.py    # generic step execution around event/checkpoint commit
-  planner.py          # planner step implementation
-  tools.py            # EXECUTE_TOOLS parent step and tool_call child steps
-  tool_registry.py    # tool metadata, lookup, validation helpers
-  subagents.py        # subagent-backed specialized steps, if still needed
-  summary.py          # merge/decide/response specialized steps
-  replay.py           # audit playback and deterministic replay helpers
-  evaluation.py       # evaluator entrypoints over recorded runs
+  runtime.py            # thin runtime: build workflow tree, hand to executor
+  service.py            # application-facing start/get/resume facade
+  models.py             # AgentState, decisions, tool calls, user requests
+  steps.py              # RuntimeStep protocol, StepResult with state_after, composite step types
+  step_executor.py      # generic step execution: handles atomic, sequence, parallel
+  workflow.py           # workflow tree definitions (SequenceStepGroup, ParallelStepGroup)
+  state_projection.py   # derive_state() and _apply() — pure AgentState fold over events
+  planner.py            # planner step implementation
+  tools.py              # EXECUTE_TOOLS parent step and tool_call child steps
+  tool_registry.py      # tool metadata, lookup, validation helpers
+  subagents.py          # subagent-backed specialized steps, if still needed
+  summary.py            # merge/decide/response specialized steps
+  replay.py             # audit playback and deterministic replay helpers
+  evaluation.py         # evaluator entrypoints over recorded runs
 
 components/xagent/agent_persistence/
   repositories.py     # repository protocols for runs, events, checkpoints, artifacts
@@ -1032,16 +1181,29 @@ This structure is a migration target, not a mandate to rename every existing fil
 
 ```text
 existing PlannerExecutor
-→ PlannerStep implementing RuntimeStep
+→ PlannerStep (AtomicStep) implementing RuntimeStep
 
-existing subagent execution
-→ specialized step or tool_call child step, depending on whether it is still a subagent abstraction
+existing subagent execution (parallel asyncio.gather in _run_subagents)
+→ SubagentStep children inside a ParallelStepGroup
 
 existing SummaryExecutor
-→ Merge/Decide/Response step implementation
+→ SummaryStep (AtomicStep); longer term: Merge/Decide/Response steps
 
 existing StepRunner
-→ generic StepExecutor that appends StepEvent records and commits checkpoints
+→ generic StepExecutor that handles atomic, sequence, and parallel steps;
+  appends StepEvent records; commits checkpoints
+
+existing _run_loop / _run_planner / _run_subagents / _run_summary methods
+→ SequenceStepGroup workflow tree defined in workflow.py;
+  runtime.py shrinks to: build tree, hand to executor, return result
+
+existing on_success callbacks + _state_commit_lock
+→ derive_state() in state_projection.py;
+  state is derived from events after each step_succeeded append
+
+existing _hydrate_succeeded_step (resume path only)
+→ promoted to _apply() in state_projection.py;
+  used on every step completion, not only on resume
 ```
 
 The most reusable layer is still the persistence record layer: step events, checkpoints, snapshots, artifacts, and projections. In this repo, that layer belongs under `components/xagent/agent_persistence/`, while orchestration and domain-specific step implementations belong under `components/xagent/agent_flow/`.

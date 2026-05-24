@@ -1,31 +1,30 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
-from typing import Any
+from datetime import UTC, datetime
+from uuid import uuid4
 
 from xagent.agent_flow.config import AgentFlowAppConfig
 from xagent.agent_flow.errors import StepRunnerError
 from xagent.agent_flow.models import (
     AgentError,
-    AgentFlowIteration,
     AgentFlowState,
     FlowStage,
-    PlanOutput,
     RunStatus,
-    StepStatus,
-    SubagentResult,
     SummaryDecision,
-    SummaryOutput,
+    UserInputEvent,
 )
 from xagent.agent_flow.planner import PlannerExecutor
+from xagent.agent_flow.state_projection import derive_state
 from xagent.agent_flow.step_runner import StepRunner
+from xagent.agent_flow.steps import RuntimeContext
 from xagent.agent_flow.subagents import FlowSubagent
 from xagent.agent_flow.summary import SummaryExecutor
+from xagent.agent_flow.workflow import build_iteration_step
 from xagent.agent_persistence.repositories import (
+    CheckpointRecord,
     CheckpointRepository,
     RunRepository,
-    StepRecord,
     StepRepository,
 )
 
@@ -55,10 +54,17 @@ class AgentFlowRuntime:
         return await self._run_loop(state, create_run=True)
 
     async def resume(self, state: AgentFlowState) -> AgentFlowState:
-        if state.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
-            return state
-        await self._reconcile_succeeded_steps(state)
-        return await self._run_loop(state, create_run=False)
+        base = await self._checkpoint_repository.get_latest_checkpoint(state.run_id)
+        if base is None:
+            base = state
+        if base.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
+            return base
+        steps = await self._step_repository.get_steps_for_run_iteration(
+            base.run_id,
+            base.current_iteration,
+        )
+        derived = derive_state(base, steps)
+        return await self._run_loop(derived, create_run=False)
 
     async def _run_loop(
         self,
@@ -74,11 +80,8 @@ class AgentFlowRuntime:
         await self._save_state(state, checkpoint_name="start")
 
         while True:
-            iteration = state.get_or_create_current_iteration()
             try:
-                await self._run_planner(state, iteration)
-                await self._run_subagents(state, iteration)
-                await self._run_summary(state, iteration)
+                state_after = await self._run_iteration(state)
             except StepRunnerError as exc:
                 return await self._fail_state(
                     state,
@@ -102,34 +105,72 @@ class AgentFlowRuntime:
                     ),
                 )
 
-            if iteration.summary is None:
+            current_iteration = state_after.get_or_create_current_iteration()
+            failed_subagents = [
+                r
+                for r in current_iteration.subagent_results.values()
+                if r.status == "error"
+            ]
+            if (
+                failed_subagents
+                and not self._config.workflow.continue_on_subagent_failure
+            ):
+                first = failed_subagents[0]
                 return await self._fail_state(
-                    state,
+                    state_after,
+                    AgentError(
+                        stage=FlowStage.SUBAGENTS,
+                        message=first.error.message if first.error else first.content,
+                    ),
+                )
+
+            if current_iteration.summary is None:
+                return await self._fail_state(
+                    state_after,
                     AgentError(
                         stage=FlowStage.SUMMARIZING,
                         message="Summary step did not produce output.",
                     ),
                 )
 
-            if iteration.summary.decision is SummaryDecision.FINAL:
+            if current_iteration.summary.decision is SummaryDecision.FINAL:
                 return await self._complete_state(
-                    state,
-                    iteration.summary.answer_draft or "",
+                    state_after,
+                    current_iteration.summary.answer_draft or "",
                 )
 
-            if iteration.summary.decision is SummaryDecision.FAIL:
+            if current_iteration.summary.decision is SummaryDecision.ASK_USER:
+                user_request = current_iteration.summary.user_request
+                if user_request is None:
+                    return await self._fail_state(
+                        state_after,
+                        AgentError(
+                            stage=FlowStage.SUMMARIZING,
+                            message="ASK_USER decision requires user_request in SummaryOutput.",
+                        ),
+                    )
+                wait_state = state_after.model_copy(deep=True)
+                wait_state.pending_user_request = user_request
+                wait_state.status = RunStatus.WAITING_FOR_USER
+                wait_state.current_stage = FlowStage.WAITING_FOR_USER
+                return await self._pause_state(wait_state)
+
+            if current_iteration.summary.decision is SummaryDecision.FAIL:
                 return await self._fail_state(
-                    state,
+                    state_after,
                     AgentError(
                         stage=FlowStage.SUMMARIZING,
-                        message=iteration.summary.rationale
+                        message=current_iteration.summary.rationale
                         or "Summary requested run failure.",
                     ),
                 )
 
-            if state.current_iteration + 1 >= self._config.workflow.max_iterations:
+            if (
+                state_after.current_iteration + 1
+                >= self._config.workflow.max_iterations
+            ):
                 return await self._fail_state(
-                    state,
+                    state_after,
                     AgentError(
                         stage=FlowStage.SUMMARIZING,
                         message="Agent flow reached the maximum iteration count.",
@@ -139,145 +180,34 @@ class AgentFlowRuntime:
                     ),
                 )
 
+            state = state_after.model_copy(deep=True)
             state.current_iteration += 1
             state.current_stage = FlowStage.START
             await self._save_state(state, checkpoint_name="replan")
 
-    async def _run_planner(
+    async def _run_iteration(
         self,
         state: AgentFlowState,
-        iteration: AgentFlowIteration,
-    ) -> None:
-        state.current_stage = FlowStage.PLANNING
-        output_json = await self._step_runner.run_step(
+    ) -> AgentFlowState:
+        """Build and execute the iteration workflow tree.
+
+        Design link: Section 3.1, step hierarchy.
+        Non-goal: does not contain per-phase orchestration; delegates to workflow.py.
+        """
+        workflow_step = build_iteration_step(
+            config=self._config,
+            planner=self._planner,
+            subagents=self._subagents,
+            summary=self._summary,
             state=state,
-            step_name="planner",
-            step_type="planner",
-            input_json={
-                "query": state.user_query,
-                "subagents": list(self._config.subagents),
-            },
-            max_attempts=self._config.planner.max_attempts,
-            fn=lambda _: self._plan_step(state),
         )
-        iteration.plan = PlanOutput.model_validate(output_json)
-        await self._save_state(state, checkpoint_name="planner")
 
-    async def _plan_step(self, state: AgentFlowState) -> dict[str, Any]:
-        plan = await self._planner.plan(
-            state=state,
-            subagents=self._config.subagents,
-            max_selections=self._config.workflow.max_subagents_per_iteration,
+        result = await self._step_runner.execute_composite(
+            workflow_step, state, RuntimeContext()
         )
-        return plan.model_dump(mode="json")
-
-    async def _run_subagents(
-        self,
-        state: AgentFlowState,
-        iteration: AgentFlowIteration,
-    ) -> None:
-        state.current_stage = FlowStage.SUBAGENTS
-        if iteration.plan is None:
-            raise RuntimeError("Planner must run before subagents.")
-
-        if self._config.workflow.subagent_execution_mode == "parallel":
-            results = await asyncio.gather(
-                *[
-                    self._run_subagent_step(state, selection.name)
-                    for selection in iteration.plan.selections
-                    if selection.name in self._subagents
-                ]
-            )
-        else:
-            results = []
-            for selection in iteration.plan.selections:
-                if selection.name in self._subagents:
-                    results.append(await self._run_subagent_step(state, selection.name))
-
-        for result in results:
-            iteration.subagent_results[result.name] = result
-            if result.error is not None:
-                iteration.errors.append(result.error)
-
-        failed_results = [result for result in results if result.status == "error"]
-        if failed_results and not self._config.workflow.continue_on_subagent_failure:
-            first = failed_results[0]
-            raise RuntimeError(first.error.message if first.error else first.content)
-
-        await self._save_state(state, checkpoint_name="subagents")
-
-    async def _run_subagent_step(
-        self,
-        state: AgentFlowState,
-        subagent_name: str,
-    ) -> SubagentResult:
-        iteration = state.get_or_create_current_iteration()
-        if iteration.plan is None:
-            raise RuntimeError("Planner must run before subagents.")
-        selection = next(
-            selection
-            for selection in iteration.plan.selections
-            if selection.name == subagent_name
-        )
-        output_json = await self._step_runner.run_step(
-            state=state,
-            step_name=f"subagent:{subagent_name}",
-            step_type="subagent",
-            input_json=selection.model_dump(mode="json"),
-            max_attempts=self._config.subagents[subagent_name].max_attempts,
-            fn=lambda _: self._invoke_subagent(state, subagent_name),
-        )
-        return SubagentResult.model_validate(output_json)
-
-    async def _invoke_subagent(
-        self,
-        state: AgentFlowState,
-        subagent_name: str,
-    ) -> dict[str, Any]:
-        iteration = state.get_or_create_current_iteration()
-        if iteration.plan is None:
-            raise RuntimeError("Planner must run before subagents.")
-        selection = next(
-            selection
-            for selection in iteration.plan.selections
-            if selection.name == subagent_name
-        )
-        result = await self._subagents[subagent_name].ainvoke(
-            state=state,
-            selection=selection,
-        )
-        return result.model_dump(mode="json")
-
-    async def _run_summary(
-        self,
-        state: AgentFlowState,
-        iteration: AgentFlowIteration,
-    ) -> None:
-        state.current_stage = FlowStage.SUMMARIZING
-        output_json = await self._step_runner.run_step(
-            state=state,
-            step_name="summary",
-            step_type="summary",
-            input_json={
-                "query": state.user_query,
-                "subagent_results": {
-                    name: result.model_dump(mode="json")
-                    for name, result in iteration.subagent_results.items()
-                },
-            },
-            max_attempts=self._config.summary.max_attempts,
-            fn=lambda _: self._summarize_step(state, iteration),
-        )
-        iteration.summary = SummaryOutput.model_validate(output_json)
-        await self._save_state(state, checkpoint_name="summary")
-
-    async def _summarize_step(
-        self,
-        state: AgentFlowState,
-        iteration: AgentFlowIteration,
-    ) -> dict[str, Any]:
-        summary = await self._summary.summarize(state=state, iteration=iteration)
-        return summary.model_dump(mode="json")
+        state_after = result.state_after if result.state_after is not None else state
+        await self._save_state(state_after, checkpoint_name="iteration")
+        return state_after
 
     async def _complete_state(
         self,
@@ -317,43 +247,54 @@ class AgentFlowRuntime:
         )
         return failed
 
+    async def _pause_state(self, state: AgentFlowState) -> AgentFlowState:
+        await self._run_repository.update_run_state(state)
+        await self._checkpoint_repository.save_checkpoint(
+            run_id=state.run_id,
+            iteration=state.current_iteration,
+            checkpoint_name="ask_user",
+            stage=state.current_stage,
+            state=state,
+        )
+        return state
+
+    async def resume_with_input(
+        self,
+        state: AgentFlowState,
+        user_input: str,
+    ) -> AgentFlowState:
+        """Resume a waiting_for_user run by attaching a user input event."""
+        if state.status is not RunStatus.WAITING_FOR_USER:
+            raise ValueError(f"Expected waiting_for_user status, got: {state.status}")
+        if state.pending_user_request is None:
+            raise ValueError("No pending user request found in state")
+
+        event = UserInputEvent(
+            event_id=str(uuid4()),
+            run_id=state.run_id,
+            request_id=state.pending_user_request.request_id,
+            content=user_input,
+            occurred_at=datetime.now(UTC),
+        )
+        new_state = state.model_copy(deep=True)
+        new_state.user_input_events.append(event)
+        new_state.pending_user_request = None
+        new_state.current_iteration += 1
+        new_state.current_stage = FlowStage.START
+        await self._save_state(new_state, checkpoint_name="user_input")
+        return await self._run_loop(new_state, create_run=False)
+
     async def _save_state(
         self,
         state: AgentFlowState,
         *,
         checkpoint_name: str,
-    ) -> None:
+    ) -> CheckpointRecord:
         await self._run_repository.update_run_state(state)
-        await self._checkpoint_repository.save_checkpoint(
+        return await self._checkpoint_repository.save_checkpoint(
             run_id=state.run_id,
             iteration=state.current_iteration,
             checkpoint_name=checkpoint_name,
             stage=state.current_stage,
             state=state,
         )
-
-    async def _reconcile_succeeded_steps(self, state: AgentFlowState) -> None:
-        steps = await self._step_repository.get_steps_for_run_iteration(
-            state.run_id,
-            state.current_iteration,
-        )
-        iteration = state.get_or_create_current_iteration()
-        for step in steps:
-            if step.status is not StepStatus.SUCCEEDED or step.output_json is None:
-                continue
-            self._hydrate_succeeded_step(iteration, step)
-
-    def _hydrate_succeeded_step(
-        self,
-        iteration: AgentFlowIteration,
-        step: StepRecord,
-    ) -> None:
-        if step.step_name == "planner":
-            iteration.plan = PlanOutput.model_validate(step.output_json)
-        elif step.step_name.startswith("subagent:"):
-            result = SubagentResult.model_validate(step.output_json)
-            iteration.subagent_results[result.name] = result
-            if result.error is not None and result.error not in iteration.errors:
-                iteration.errors.append(result.error)
-        elif step.step_name == "summary":
-            iteration.summary = SummaryOutput.model_validate(step.output_json)

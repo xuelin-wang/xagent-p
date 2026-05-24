@@ -11,6 +11,10 @@ class AgentFlowRunRequest(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
+class AgentFlowUserInputRequest(BaseModel):
+    content: str = Field(min_length=1)
+
+
 def create_agent_flow_router(service: AgentFlowService) -> APIRouter:
     router = APIRouter(prefix="/agent-flow", tags=["agent-flow"])
 
@@ -39,5 +43,18 @@ def create_agent_flow_router(service: AgentFlowService) -> APIRouter:
             raise HTTPException(
                 status_code=404, detail="Agent flow run not found."
             ) from exc
+
+    @router.post("/runs/{run_id}/input", response_model=AgentFlowState)
+    async def submit_user_input(
+        run_id: str, request: AgentFlowUserInputRequest
+    ) -> AgentFlowState:
+        try:
+            return await service.submit_user_input(run_id, request.content)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail="Agent flow run not found."
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     return router

@@ -7,7 +7,10 @@ from xagent.agent_flow.errors import NonRetryableStepError, StepRunnerError
 from xagent.agent_flow.models import AgentFlowState, StepStatus
 from xagent.agent_flow.step_runner import StepRunner
 from xagent.agent_persistence.memory import InMemoryStepRepository
-from xagent.agent_persistence.repositories import StepRecord
+from xagent.agent_persistence.repositories import (
+    StepEventType,
+    StepRecord,
+)
 
 
 def test_step_runner_persists_success_and_skips_succeeded_step() -> None:
@@ -51,6 +54,18 @@ async def _step_runner_persists_success_and_skips_succeeded_step() -> None:
     assert steps[0].attempt_count == 1
     assert steps[0].output_json == first
 
+    events = await repository.get_step_events_for_step(steps[0].step_id)
+    assert [event.event_type for event in events] == [
+        StepEventType.CREATED,
+        StepEventType.STARTED,
+        StepEventType.SUCCEEDED,
+    ]
+    assert [event.sequence_index for event in events] == [1, 2, 3]
+    assert events[-1].output_json == first
+
+    rebuilt = await repository.rebuild_step_projection()
+    assert rebuilt == steps
+
 
 def test_step_runner_retries_failures_until_success() -> None:
     asyncio.run(_step_runner_retries_failures_until_success())
@@ -85,6 +100,20 @@ async def _step_runner_retries_failures_until_success() -> None:
     assert steps[0].status is StepStatus.SUCCEEDED
     assert steps[0].attempt_count == 2
     assert steps[0].error_json is None
+
+    events = await repository.get_step_events_for_step(steps[0].step_id)
+    assert [(event.event_type, event.attempt_index) for event in events] == [
+        (StepEventType.CREATED, 0),
+        (StepEventType.STARTED, 1),
+        (StepEventType.FAILED, 1),
+        (StepEventType.STARTED, 2),
+        (StepEventType.SUCCEEDED, 2),
+    ]
+
+    latest_success = await repository.get_latest_succeeded_event("run_1")
+    assert latest_success is not None
+    assert latest_success.step_id == steps[0].step_id
+    assert latest_success.attempt_index == 2
 
 
 def test_step_runner_persists_exhausted_failure() -> None:

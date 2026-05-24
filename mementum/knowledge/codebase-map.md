@@ -44,7 +44,7 @@ Architectural boundaries:
 - `llm_registry.provider_protocol` defines the provider protocol and does not import providers.
 - `llm_registry.factory.default_registry()` imports built-in providers lazily.
 - Provider components map common contracts to provider-specific APIs and preserve raw responses.
-- `components/xagent/agent_flow/` now owns the durable runtime surface: state/config/models, step runner, resume reconciliation, LLM adapter, planner/subagent/summary executors, and the service facade.
+- `components/xagent/agent_flow/` now owns the durable runtime surface: state/config/models, step runner, resume reconciliation, LLM adapter, planner/subagent/summary executors, the service facade, `replay.py` (audit playback via `build_audit_record`), and `evaluation.py` (structural run scoring via `evaluate_state`/`evaluate_run`). The `waiting_for_user` flow is handled through `submit_user_input` on the service.
 - `components/xagent/agent_persistence/` owns the runtime repositories used by the durable runtime.
 - `bases/xagent/api_http/` now exposes both the legacy `/query` surface and the new `/agent-flow/*` routes.
 

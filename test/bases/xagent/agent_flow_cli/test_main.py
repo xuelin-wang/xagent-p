@@ -57,6 +57,17 @@ class FakeService:
             final_response="resumed",
         )
 
+    async def submit_user_input(self, run_id: str, user_input: str) -> AgentFlowState:
+        self.calls.append(
+            ("submit_user_input", {"run_id": run_id, "user_input": user_input})
+        )
+        return AgentFlowState(
+            run_id=run_id,
+            user_query="stored query",
+            status=RunStatus.COMPLETED,
+            final_response="continued",
+        )
+
 
 def test_build_parser_has_expected_commands() -> None:
     parser = build_parser()
@@ -64,6 +75,7 @@ def test_build_parser_has_expected_commands() -> None:
     assert parser.parse_args(["run", "query"]).command == "run"
     assert parser.parse_args(["get", "run_1"]).command == "get"
     assert parser.parse_args(["resume", "run_1"]).command == "resume"
+    assert parser.parse_args(["input", "run_1", "user text"]).command == "input"
 
 
 def test_run_command_dispatches_to_service_and_prints_json() -> None:
@@ -153,6 +165,21 @@ def test_run_loads_config_file_for_default_service(tmp_path: Path) -> None:
     assert payload["final_response"] == (
         "manuals handled query 'diagnose no start' for iteration 0."
     )
+
+
+def test_input_command_dispatches_to_submit_user_input() -> None:
+    service = FakeService()
+    stdout = io.StringIO()
+
+    exit_code = asyncio.run(
+        run(["input", "run_1", "It's a 2020 model."], service=service, stdout=stdout)
+    )
+
+    assert exit_code == 0
+    assert service.calls == [
+        ("submit_user_input", {"run_id": "run_1", "user_input": "It's a 2020 model."})
+    ]
+    assert json.loads(stdout.getvalue())["final_response"] == "continued"
 
 
 def test_parse_metadata_rejects_non_object_json() -> None:

@@ -11,6 +11,7 @@ from xagent.agent_flow.models import (
     PlanSubagentSelection,
     SubagentResult,
 )
+from xagent.agent_flow.steps import RuntimeContext, StepResult
 
 
 class FlowSubagent(Protocol):
@@ -23,6 +24,33 @@ class FlowSubagent(Protocol):
         state: AgentFlowState,
         selection: PlanSubagentSelection,
     ) -> SubagentResult: ...
+
+
+class SubagentStep:
+    """RuntimeStep adapter for one selected subagent invocation."""
+
+    step_type = "subagent"
+
+    def __init__(
+        self,
+        *,
+        subagent: FlowSubagent,
+        selection: PlanSubagentSelection,
+    ):
+        self._subagent = subagent
+        self._selection = selection
+
+    async def run(
+        self,
+        state: AgentFlowState,
+        context: RuntimeContext,
+    ) -> StepResult:
+        _ = context
+        result = await self._subagent.ainvoke(
+            state=state,
+            selection=self._selection,
+        )
+        return StepResult(output_json=result.model_dump(mode="json"))
 
 
 class FakeFlowSubagent:
