@@ -46,6 +46,9 @@ class InMemoryRunRepository:
         state.final_response = final_response
         self._states[run_id] = state
 
+    async def list_runs(self) -> list[AgentFlowState]:
+        return [state.model_copy(deep=True) for state in self._states.values()]
+
     async def mark_failed(self, run_id: str, error: dict[str, Any]) -> None:
         state = await self.get_run_state(run_id)
         state.status = RunStatus.FAILED

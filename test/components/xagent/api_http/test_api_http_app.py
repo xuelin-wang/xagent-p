@@ -17,6 +17,7 @@ def test_health_endpoint_exists() -> None:
     assert "/agent-flow/runs/{run_id}" in routes
     assert "/agent-flow/runs/{run_id}/resume" in routes
     assert "/agent-flow/runs/{run_id}/input" in routes
+    assert "/agent-flow/runs/{run_id}/audit" in routes
 
 
 def test_query_returns_502_when_openai_authentication_fails(
@@ -107,6 +108,52 @@ def test_agent_flow_input_returns_409_for_non_waiting_run() -> None:
     )
 
     assert input_response.status_code == 409
+
+
+def test_agent_flow_list_runs_returns_started_runs() -> None:
+    client = TestClient(create_app(_agent_flow_api_config()))
+
+    list_before = client.get("/agent-flow/runs")
+    assert list_before.status_code == 200
+    assert list_before.json() == []
+
+    start_response = client.post(
+        "/agent-flow/runs", json={"query": "diagnose no start"}
+    )
+    assert start_response.status_code == 200
+    run_id = start_response.json()["run_id"]
+
+    list_after = client.get("/agent-flow/runs")
+    assert list_after.status_code == 200
+    ids = [r["run_id"] for r in list_after.json()]
+    assert run_id in ids
+
+
+def test_agent_flow_audit_returns_steps_for_completed_run() -> None:
+    client = TestClient(create_app(_agent_flow_api_config()))
+
+    start_response = client.post(
+        "/agent-flow/runs", json={"query": "diagnose no start"}
+    )
+    assert start_response.status_code == 200
+    run_id = start_response.json()["run_id"]
+
+    audit_response = client.get(f"/agent-flow/runs/{run_id}/audit")
+    assert audit_response.status_code == 200
+    audit = audit_response.json()
+    assert audit["run_id"] == run_id
+    assert audit["status"] == "completed"
+    step_names = [s["step_name"] for s in audit["steps"]]
+    assert "planner" in step_names
+    assert "summary" in step_names
+
+
+def test_agent_flow_audit_returns_404_for_missing_run() -> None:
+    client = TestClient(create_app(_agent_flow_api_config()))
+
+    response = client.get("/agent-flow/runs/missing/audit")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Agent flow run not found."}
 
 
 def _agent_flow_api_config() -> ApiHttpConfig:

@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from langchain_openai import ChatOpenAI
 from openai import AuthenticationError
 from pydantic import BaseModel, Field, SecretStr
@@ -121,6 +124,11 @@ def create_app(config: ApiHttpConfig | None = None) -> FastAPI:
     app.include_router(
         create_agent_flow_router(AgentFlowService.in_memory(config.agent_flow))
     )
+
+    _demo_dir = Path(__file__).parent / "static" / "demo"
+    if _demo_dir.exists():
+        app.mount("/demo", StaticFiles(directory=_demo_dir, html=True), name="demo")
+
     return app
 
 

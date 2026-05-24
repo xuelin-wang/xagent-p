@@ -86,6 +86,8 @@ class RunRepository(Protocol):
 
     async def mark_failed(self, run_id: str, error: dict[str, Any]) -> None: ...
 
+    async def list_runs(self) -> list[AgentFlowState]: ...
+
 
 class StepRepository(Protocol):
     async def create_or_get_step(

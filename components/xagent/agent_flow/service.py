@@ -15,6 +15,7 @@ from xagent.agent_flow.planner import (
     LLMPlannerExecutor,
     PlannerExecutor,
 )
+from xagent.agent_flow.replay import RunAuditRecord, build_audit_record
 from xagent.agent_flow.runtime import AgentFlowRuntime
 from xagent.agent_flow.subagents import (
     FakeFlowSubagent,
@@ -50,10 +51,12 @@ class AgentFlowService:
         *,
         runtime: AgentFlowRuntime,
         run_repository: RunRepository,
+        step_repository: StepRepository,
         checkpoint_repository: CheckpointRepository,
     ):
         self._runtime = runtime
         self._run_repository = run_repository
+        self._step_repository = step_repository
         self._checkpoint_repository = checkpoint_repository
 
     @classmethod
@@ -109,6 +112,7 @@ class AgentFlowService:
         return cls(
             runtime=runtime,
             run_repository=run_repository,
+            step_repository=step_repository,
             checkpoint_repository=checkpoint_repository,
         )
 
@@ -127,8 +131,18 @@ class AgentFlowService:
         )
         return await self._runtime.run(state)
 
+    async def list_runs(self) -> list[AgentFlowState]:
+        return await self._run_repository.list_runs()
+
     async def get_run(self, run_id: str) -> AgentFlowState:
         return await self._run_repository.get_run_state(run_id)
+
+    async def get_audit_record(self, run_id: str) -> RunAuditRecord:
+        return await build_audit_record(
+            run_id,
+            run_repository=self._run_repository,
+            step_repository=self._step_repository,
+        )
 
     async def resume_run(self, run_id: str) -> AgentFlowState:
         checkpoint = await self._checkpoint_repository.get_latest_checkpoint(run_id)

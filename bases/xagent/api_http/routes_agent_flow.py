@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from xagent.agent_flow.models import AgentFlowState
+from xagent.agent_flow.replay import RunAuditRecord
 from xagent.agent_flow.service import AgentFlowService
 
 
@@ -17,6 +18,10 @@ class AgentFlowUserInputRequest(BaseModel):
 
 def create_agent_flow_router(service: AgentFlowService) -> APIRouter:
     router = APIRouter(prefix="/agent-flow", tags=["agent-flow"])
+
+    @router.get("/runs", response_model=list[AgentFlowState])
+    async def list_runs() -> list[AgentFlowState]:
+        return await service.list_runs()
 
     @router.post("/runs", response_model=AgentFlowState)
     async def start_run(request: AgentFlowRunRequest) -> AgentFlowState:
@@ -39,6 +44,15 @@ def create_agent_flow_router(service: AgentFlowService) -> APIRouter:
     async def resume_run(run_id: str) -> AgentFlowState:
         try:
             return await service.resume_run(run_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail="Agent flow run not found."
+            ) from exc
+
+    @router.get("/runs/{run_id}/audit", response_model=RunAuditRecord)
+    async def get_run_audit(run_id: str) -> RunAuditRecord:
+        try:
+            return await service.get_audit_record(run_id)
         except KeyError as exc:
             raise HTTPException(
                 status_code=404, detail="Agent flow run not found."
