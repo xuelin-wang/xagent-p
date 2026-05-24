@@ -158,7 +158,7 @@ async def _summary_step_matches_executor_output() -> None:
     state = AgentFlowState(run_id="run_1", user_query="diagnose no start")
     iteration = state.get_or_create_current_iteration()
     executor = FakeSummaryExecutor(decision=SummaryDecision.FINAL)
-    step = SummaryStep(executor=executor, iteration=iteration)
+    step = SummaryStep(executor=executor)
 
     result = await step.run(state=state, context=RuntimeContext())
 

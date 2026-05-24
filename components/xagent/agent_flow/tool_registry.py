@@ -192,9 +192,7 @@ class ToolRegistry:
 
             if call_id in seen_call_ids:
                 rejected.append(
-                    RejectedToolCall(
-                        tool_name=call.tool_name, reason="duplicate call"
-                    )
+                    RejectedToolCall(tool_name=call.tool_name, reason="duplicate call")
                 )
                 continue
 

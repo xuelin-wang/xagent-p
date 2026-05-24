@@ -126,15 +126,7 @@ async def _runtime_completes_memory_backed_happy_path() -> None:
     latest = await checkpoint_repository.get_latest_checkpoint("run_1")
     assert latest is not None
     assert latest.status is RunStatus.COMPLETED
-
-    latest_success = await step_repository.get_latest_succeeded_event("run_1")
-    assert latest_success is not None
-    assert latest_success.checkpoint_id is not None
-    success_checkpoint = await checkpoint_repository.get_checkpoint(
-        latest_success.checkpoint_id
-    )
-    assert success_checkpoint is not None
-    assert success_checkpoint.state.iterations[0].summary is not None
+    assert latest.iterations[0].summary is not None
 
 
 def test_runtime_replans_then_completes_next_iteration() -> None:

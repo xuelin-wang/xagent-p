@@ -8,6 +8,7 @@ from typing import Any
 
 from xagent.agent_flow.errors import NonRetryableStepError, StepRunnerError
 from xagent.agent_flow.models import AgentFlowState, StepStatus
+from xagent.agent_flow.state_projection import _apply
 from xagent.agent_flow.steps import (
     ParallelStepGroup,
     RuntimeContext,
@@ -16,13 +17,11 @@ from xagent.agent_flow.steps import (
     StepResult,
 )
 from xagent.agent_persistence.repositories import (
-    CheckpointRecord,
     StepRecord,
     StepRepository,
 )
 
 StepFunction = Callable[[StepRecord], Awaitable[dict[str, Any]]]
-StepSuccessCommit = Callable[[dict[str, Any]], Awaitable[CheckpointRecord | None]]
 
 
 @dataclass
@@ -36,8 +35,6 @@ class ChildStep:
     at execution time — useful when the input depends on prior step outputs.
     context overrides the parent's RuntimeContext for this child only (e.g., per-step
     retry policy). If None, the parent context is inherited.
-    on_success is called after the step succeeds; its return value provides the
-    checkpoint_id for the step_succeeded event.
     """
 
     step: Any  # RuntimeStep | SequenceStepGroup | ParallelStepGroup
@@ -45,7 +42,6 @@ class ChildStep:
     input_json: Any = dc_field(
         default_factory=dict
     )  # dict | Callable[[AgentFlowState], dict]
-    on_success: StepSuccessCommit | None = None
     context: RuntimeContext | None = None
 
 
@@ -61,7 +57,6 @@ class StepRunner:
         input_json: dict[str, Any],
         step: RuntimeStep,
         context: RuntimeContext,
-        on_success: StepSuccessCommit | None = None,
         parent_step_id: str | None = None,
     ) -> dict[str, Any]:
         """Run a RuntimeStep through the existing durable step machinery."""
@@ -77,7 +72,6 @@ class StepRunner:
                 state=state,
                 context=context,
             ),
-            on_success=on_success,
             parent_step_id=parent_step_id,
         )
 
@@ -90,7 +84,6 @@ class StepRunner:
         input_json: dict[str, Any],
         max_attempts: int,
         fn: StepFunction,
-        on_success: StepSuccessCommit | None = None,
         parent_step_id: str | None = None,
     ) -> dict[str, Any]:
         attempts = max(max_attempts, 1)
@@ -156,10 +149,6 @@ class StepRunner:
             await self._step_repository.mark_step_succeeded(
                 current_step.step_id,
                 output_json,
-                checkpoint_id=await self._checkpoint_id_from_success_commit(
-                    output_json,
-                    on_success,
-                ),
             )
             return output_json
 
@@ -190,18 +179,6 @@ class StepRunner:
         result = await step.run(state=state, context=context)
         return result.output_json
 
-    async def _checkpoint_id_from_success_commit(
-        self,
-        output_json: dict[str, Any],
-        on_success: StepSuccessCommit | None,
-    ) -> str | None:
-        if on_success is None:
-            return None
-        checkpoint = await on_success(output_json)
-        if checkpoint is None:
-            return None
-        return checkpoint.checkpoint_id
-
     async def execute_composite(
         self,
         group: SequenceStepGroup | ParallelStepGroup,
@@ -209,15 +186,12 @@ class StepRunner:
         context: RuntimeContext,
         *,
         parent_step_id: str | None = None,
-        on_success: StepSuccessCommit | None = None,
     ) -> StepResult:
         """Execute a composite step group (sequence or parallel).
 
         Design link: Section 3.1, step hierarchy.
         Creates its own durable step record so it appears in the event ledger.
         Children are executed with parent_step_id pointing to this group's record.
-        on_success is called after all children succeed; its checkpoint_id is stored
-        on the composite's step_succeeded event (same invariant as atomic steps).
         Resume: already-succeeded composites are skipped; partially completed ones
         re-execute only incomplete children (each child handles its own idempotency).
         """
@@ -256,9 +230,6 @@ class StepRunner:
         await self._step_repository.mark_step_succeeded(
             step_record.step_id,
             result.output_json,
-            checkpoint_id=await self._checkpoint_id_from_success_commit(
-                result.output_json, on_success
-            ),
         )
         return result
 
@@ -301,9 +272,15 @@ class StepRunner:
         )
 
         merged: dict[str, Any] = {}
-        for result in results:
+        merged_state = state
+        for child, result in zip(children, results, strict=True):
             merged.update(result.output_json)
-        return StepResult(output_json=merged)
+            if isinstance(child.step, (SequenceStepGroup, ParallelStepGroup)):
+                if result.state_after is not None:
+                    merged_state = result.state_after
+            else:
+                merged_state = _apply(merged_state, child.step_name, result.output_json)
+        return StepResult(output_json=merged, state_after=merged_state)
 
     async def _execute_child(
         self,
@@ -329,7 +306,9 @@ class StepRunner:
             input_json=input_json,
             step=step,
             context=effective_context,
-            on_success=child.on_success,
             parent_step_id=parent_step_id,
         )
-        return StepResult(output_json=output_json)
+        return StepResult(
+            output_json=output_json,
+            state_after=_apply(state, child.step_name, output_json),
+        )

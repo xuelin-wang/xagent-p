@@ -15,7 +15,7 @@ from typing import Any
 from xagent.agent_flow.config import AgentFlowAppConfig, SubagentConfig
 from xagent.agent_flow.models import AgentFlowIteration, AgentFlowState
 from xagent.agent_flow.planner import PlannerExecutor, PlannerStep
-from xagent.agent_flow.step_runner import ChildStep, StepSuccessCommit
+from xagent.agent_flow.step_runner import ChildStep
 from xagent.agent_flow.steps import (
     ParallelStepGroup,
     RetryPolicy,
@@ -34,10 +34,6 @@ def build_iteration_step(
     subagents: Mapping[str, FlowSubagent],
     summary: SummaryExecutor,
     state: AgentFlowState,
-    iteration: AgentFlowIteration,
-    on_planner_success: StepSuccessCommit,
-    on_subagent_success: StepSuccessCommit,
-    on_summary_success: StepSuccessCommit,
 ) -> SequenceStepGroup:
     """Build the workflow tree for one agent iteration.
 
@@ -69,7 +65,6 @@ def build_iteration_step(
             "query": state.user_query,
             "subagents": list(config.subagents),
         },
-        on_success=on_planner_success,
         context=planner_context,
     )
 
@@ -84,7 +79,6 @@ def build_iteration_step(
             config.subagents,
             subagents,
             config,
-            on_subagent_success,
         )
         if not children:
             return None
@@ -104,10 +98,9 @@ def build_iteration_step(
         return ChildStep(step=group, step_name="subagents", input_json={})
 
     summary_child = ChildStep(
-        step=SummaryStep(executor=summary, iteration=iteration),
+        step=SummaryStep(executor=summary),
         step_name="summary",
         input_json=_summary_input_json,
-        on_success=on_summary_success,
         context=summary_context,
     )
 
@@ -124,7 +117,6 @@ def _build_subagent_children(
     subagent_configs: Mapping[str, SubagentConfig],
     subagents: Mapping[str, FlowSubagent],
     config: AgentFlowAppConfig,
-    on_subagent_success: StepSuccessCommit,
 ) -> list[ChildStep]:
     children: list[ChildStep] = []
     if iteration.plan is None:
@@ -147,7 +139,6 @@ def _build_subagent_children(
                 ),
                 step_name=f"subagent:{selection.name}",
                 input_json=selection.model_dump(mode="json"),
-                on_success=on_subagent_success,
                 context=subagent_context,
             )
         )

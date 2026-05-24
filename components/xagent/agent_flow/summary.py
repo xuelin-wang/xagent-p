@@ -27,9 +27,8 @@ class SummaryStep:
 
     step_type = "summary"
 
-    def __init__(self, *, executor: SummaryExecutor, iteration: AgentFlowIteration):
+    def __init__(self, *, executor: SummaryExecutor):
         self._executor = executor
-        self._iteration = iteration
 
     async def run(
         self,
@@ -37,9 +36,10 @@ class SummaryStep:
         context: RuntimeContext,
     ) -> StepResult:
         _ = context
+        iteration = state.get_or_create_current_iteration()
         summary = await self._executor.summarize(
             state=state,
-            iteration=self._iteration,
+            iteration=iteration,
         )
         return StepResult(output_json=summary.model_dump(mode="json"))
 
