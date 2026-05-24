@@ -10,6 +10,7 @@ const dotColor: Record<RunStatus, string> = {
   pending: 'bg-gray-400',
   running: 'bg-amber-400 animate-pulse',
   paused: 'bg-blue-400',
+  waiting: 'bg-purple-400',
   waiting_for_user: 'bg-purple-400',
   failed: 'bg-red-500',
   completed: 'bg-green-500',

@@ -774,3 +774,53 @@ Prefer small PRs in this order:
 11. Cleanup and naming alignment. *(done)*
 
 Each PR should explicitly state which design sections it implements and which sections remain future work.
+
+## Post-stage update. Conversation message wait steps
+
+Goal: generalize `ASK_USER` pause/resume into ordinary durable steps.
+
+Design update:
+
+- `WaitStep` is a normal runtime step that pauses execution until a new message
+  arrives for the same `conversation_id`.
+- `MessageInputStep` is a normal runtime step that records inbound conversation
+  messages. It is used for both new conversations and resumed conversations.
+- A message without `conversation_id` starts a new run and creates a UUID
+  conversation id.
+- A message with `conversation_id` resumes the active waiting run for that
+  conversation by completing the current `WaitStep`, then recording the message
+  with `MessageInputStep`.
+
+Implementation slice:
+
+- Add conversation-message and wait-step models to `models.py`.
+- Add `WaitStep` and `MessageInputStep`.
+- Add `StepStatus.WAITING` plus `step_waiting`/`step_resumed` events.
+- Teach `StepRunner` to persist `StepResult.wait_spec` as a waiting step.
+- Keep `submit_user_input` as a compatibility wrapper around conversation-message
+  resume.
+- Add a message-oriented service and HTTP entrypoint.
+- Update replay/audit and demo UI types for `waiting`, `wait`, and
+  `message_input`.
+
+Audit shape:
+
+```text
+A succeeded
+WaitStep waiting
+new conversation message arrives
+WaitStep resumed/succeeded
+MessageInputStep succeeded
+B succeeded
+C succeeded
+```
+
+Source pointers:
+
+- `components/xagent/agent_flow/messages.py`
+- `components/xagent/agent_flow/runtime.py`
+- `components/xagent/agent_flow/step_runner.py`
+- `components/xagent/agent_flow/workflow.py`
+- `components/xagent/agent_persistence/repositories.py`
+- `bases/xagent/api_http/routes_agent_flow.py`
+- `test/components/xagent/agent_flow/test_service.py`

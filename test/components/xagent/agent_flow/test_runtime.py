@@ -368,11 +368,11 @@ async def _runtime_resume_loads_latest_succeeded_event_checkpoint() -> None:
     assert result.final_response == "recovered manual result"
 
 
-def test_runtime_ask_user_sets_waiting_for_user_status() -> None:
-    asyncio.run(_runtime_ask_user_sets_waiting_for_user_status())
+def test_runtime_ask_user_enters_wait_step() -> None:
+    asyncio.run(_runtime_ask_user_enters_wait_step())
 
 
-async def _runtime_ask_user_sets_waiting_for_user_status() -> None:
+async def _runtime_ask_user_enters_wait_step() -> None:
     config = _config()
     runtime = AgentFlowRuntime(
         config=config,
@@ -388,10 +388,10 @@ async def _runtime_ask_user_sets_waiting_for_user_status() -> None:
         AgentFlowState(run_id="run_1", user_query="diagnose no start")
     )
 
-    assert result.status is RunStatus.WAITING_FOR_USER
-    assert result.current_stage is FlowStage.WAITING_FOR_USER
-    assert result.pending_user_request is not None
-    assert result.pending_user_request.prompt == "Please provide more information."
+    assert result.status is RunStatus.WAITING
+    assert result.current_stage is FlowStage.WAITING
+    assert result.pending_wait is not None
+    assert result.pending_wait.prompt == "Please provide more information."
 
 
 def test_runtime_resume_with_input_continues_waiting_run() -> None:
@@ -415,8 +415,8 @@ async def _runtime_resume_with_input_continues_waiting_run() -> None:
     waiting = await runtime.run(
         AgentFlowState(run_id="run_1", user_query="diagnose no start")
     )
-    assert waiting.status is RunStatus.WAITING_FOR_USER
-    assert waiting.pending_user_request is not None
+    assert waiting.status is RunStatus.WAITING
+    assert waiting.pending_wait is not None
 
     result = await runtime.resume_with_input(waiting, "It's a 2020 model.")
 
@@ -424,3 +424,5 @@ async def _runtime_resume_with_input_continues_waiting_run() -> None:
     assert result.final_response == "final from iteration 1"
     assert len(result.user_input_events) == 1
     assert result.user_input_events[0].content == "It's a 2020 model."
+    assert len(result.conversation_messages) == 1
+    assert result.conversation_messages[0].content == "It's a 2020 model."

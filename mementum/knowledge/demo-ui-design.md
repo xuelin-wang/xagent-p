@@ -32,7 +32,7 @@ output is served as static files by the FastAPI `api_http` base.
 │  ● run_c3d4  ⟳     │  ← running (animated dot)
 │    check oil …      │
 │                     │
-│  ● run_e5f6  ⏸     │  ← waiting_for_user
+│  ● run_e5f6  ⏸     │  ← waiting
 │    engine light …   │
 │                     │
 │  ● run_g7h8  ✗     │  ← failed
@@ -45,7 +45,7 @@ Status dot colours:
 |-------------------|---------|------|
 | pending           | gray    | ○    |
 | running           | amber   | ⟳ (animated spin) |
-| waiting_for_user  | purple  | ⏸   |
+| waiting           | purple  | ⏸   |
 | completed         | green   | ✓    |
 | failed            | red     | ✗    |
 | paused            | blue    | ‖    |
@@ -62,7 +62,7 @@ Three zones stacked vertically:
 ┌────────────────────────────────────────────────────────────────┐
 │  RUN HEADER  (sticky)                                          │
 │  run_id  •  STATUS BADGE  •  query text                        │
-│  case_id: …  vehicle: …  [+2 more]          [Resume] [Input]  │
+  │  case_id: …  vehicle: …  [+2 more]      [Resume] [Send Message]  │
 ├────────────────────────────────────────────────────────────────┤
 │  TAB BAR                                                       │
 │  [Flow Chart]  [Audit Log]  [State JSON]                       │
@@ -79,8 +79,8 @@ Three zones stacked vertically:
 - **Query**: full text, truncated to 2 lines (click to expand)
 - **Metadata chips**: `case_id`, then key=value pairs; overflow hidden with "+N more" chip
 - **Action buttons** (right-aligned, context-sensitive):
-  - `Resume` — shown when status is non-terminal and not waiting_for_user
-  - `Submit Input` — shown when status is `waiting_for_user`; clicking expands an
+  - `Resume` — shown when status is non-terminal and not waiting
+  - `Send Message` — shown when status is `waiting`; clicking expands an
     inline text-area + submit button below the header
 
 ---
@@ -112,12 +112,12 @@ Primary demo surface. Renders the execution graph from `AgentFlowState`.
 │  ITERATION 1                                        │
 │  ... same structure ...                             │
 └─────────────────────────────────────────────────────┘
-    │ (ASK_USER decision → waiting node)
+    │ (WAIT decision → waiting node)
     ▼
 ┌─────────────────────────────────────────────────────┐
-│  ⏸  WAITING FOR USER                               │
+│  ⏸  WAITING FOR MESSAGE                            │
 │  "What year is the vehicle?"                        │
-│  [Submit Input here if run is still live]           │
+│  [Send Message here if run is still live]           │
 └─────────────────────────────────────────────────────┘
     │ (user submits → next iteration)
     ▼
@@ -208,7 +208,7 @@ Above the rule = recovered from checkpoint. Below = executed in this resume.
     <StepNode step auditEntry onSelect>                ← SUMMARY
   </IterationBlock>
   <ResumePoint />                                      ← inserted between iterations
-  <WaitingNode request onSubmitInput? />               ← when waiting_for_user
+  <WaitingNode wait onSubmitMessage? />                ← when waiting
   <FinalResult state />                                ← completed / failed
 </FlowChart>
 ```
@@ -255,8 +255,8 @@ Append-only cues:
 - No row ever disappears or changes content after mount.
 - Sticky header: **"Audit Log — append-only 🔒"**
 
-`user_input_events` from `AgentFlowState` are interleaved chronologically as
-purple rows labelled `user_input`.
+`conversation_messages` from `AgentFlowState` are interleaved chronologically as
+blue rows labelled `message_input`.
 
 React implementation note: `<AuditLog>` receives the previous step count as a
 prop so it knows which rows are new on each poll cycle and applies the entry
@@ -542,7 +542,7 @@ src/components/run/
 Deliverables:
 - Header sticky, updates on each poll
 - Resume button triggers `POST /runs/{id}/resume`
-- Submit Input form appears when `status=waiting_for_user`
+- Send Message form appears when `status=waiting`
 - Tab bar switches between Flow Chart / Audit Log / State JSON
 
 ---
@@ -559,7 +559,7 @@ src/components/flow/
   StepNode.tsx        ← card with icon, status, attempt, duration
   Arrow.tsx           ← horizontal connector SVG line
   ResumePoint.tsx     ← dashed rule with label
-  WaitingNode.tsx     ← waiting_for_user block
+  WaitingNode.tsx     ← wait/message block
   FinalResult.tsx     ← completed / failed terminal card
 ```
 
@@ -569,7 +569,7 @@ Deliverables:
 - `↺ Replayed` badge on skipped nodes
 - Resume Point rule inserted between iterations using audit data
 - Summary decision label (final / replan / ask_user) on SUMMARY node
-- WAITING_FOR_USER node with pending request prompt
+- WAITING node with pending prompt and conversation message resume behavior
 - FINAL RESULT card (completed or failed)
 
 ---
@@ -602,8 +602,8 @@ src/components/audit/
 ```
 
 Deliverables:
-- Rows sourced from `RunAuditRecord.steps` + `AgentFlowState.user_input_events`
-- Event type badges (step_created / step_succeeded / step_failed / user_input)
+- Rows sourced from `RunAuditRecord.steps` + `AgentFlowState.conversation_messages`
+- Event type badges (step_created / step_succeeded / step_failed / message_input)
 - New rows animate in from below on each poll cycle
 - Rows never change after mount
 - Sticky "Audit Log — append-only 🔒" header

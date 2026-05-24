@@ -6,6 +6,7 @@ import pytest
 from xagent.agent_flow.errors import NonRetryableStepError, StepRunnerError
 from xagent.agent_flow.models import AgentFlowState, StepStatus
 from xagent.agent_flow.step_runner import StepRunner
+from xagent.agent_flow.steps import RetryPolicy, RuntimeContext, StepExecutionPolicy
 from xagent.agent_persistence.memory import InMemoryStepRepository
 from xagent.agent_persistence.repositories import (
     StepEventType,
@@ -224,3 +225,122 @@ async def _step_runner_refuses_to_resume_exhausted_failed_step() -> None:
 
     assert calls == 0
     assert exc_info.value.error_json["message"] == "final failure"
+
+
+def test_step_runner_timeout_zero_does_not_enforce_timeout() -> None:
+    asyncio.run(_step_runner_timeout_zero_does_not_enforce_timeout())
+
+
+async def _step_runner_timeout_zero_does_not_enforce_timeout() -> None:
+    repository = InMemoryStepRepository()
+    runner = StepRunner(repository)
+    state = AgentFlowState(run_id="run_1", user_query="diagnose no start")
+
+    class SlowStep:
+        step_type = "slow"
+
+        async def run(
+            self,
+            state: AgentFlowState,
+            context: RuntimeContext,
+        ) -> Any:
+            await asyncio.sleep(0.02)
+            return type("Result", (), {"output_json": {"answer": "done"}})()
+
+    result = await runner.run_runtime_step(
+        state=state,
+        step_name="slow",
+        input_json={},
+        step=SlowStep(),
+        context=RuntimeContext(
+            execution_policy=StepExecutionPolicy(timeout_ms=0, deadline_ms=0)
+        ),
+    )
+
+    assert result == {"answer": "done"}
+
+
+def test_step_runner_retries_per_attempt_timeout_until_success() -> None:
+    asyncio.run(_step_runner_retries_per_attempt_timeout_until_success())
+
+
+async def _step_runner_retries_per_attempt_timeout_until_success() -> None:
+    repository = InMemoryStepRepository()
+    runner = StepRunner(repository)
+    state = AgentFlowState(run_id="run_1", user_query="diagnose no start")
+    calls = 0
+
+    class EventuallyFastStep:
+        step_type = "sometimes_slow"
+
+        async def run(
+            self,
+            state: AgentFlowState,
+            context: RuntimeContext,
+        ) -> Any:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                await asyncio.sleep(0.05)
+            return type("Result", (), {"output_json": {"attempts": calls}})()
+
+    result = await runner.run_runtime_step(
+        state=state,
+        step_name="sometimes_slow",
+        input_json={},
+        step=EventuallyFastStep(),
+        context=RuntimeContext(
+            execution_policy=StepExecutionPolicy(
+                timeout_ms=10,
+                retry=RetryPolicy(max_attempts=2),
+            )
+        ),
+    )
+
+    assert result == {"attempts": 2}
+    steps = await repository.get_steps_for_run_iteration("run_1", 0)
+    assert steps[0].attempt_count == 2
+    assert steps[0].status is StepStatus.SUCCEEDED
+
+
+def test_step_runner_deadline_exhaustion_stops_retries() -> None:
+    asyncio.run(_step_runner_deadline_exhaustion_stops_retries())
+
+
+async def _step_runner_deadline_exhaustion_stops_retries() -> None:
+    repository = InMemoryStepRepository()
+    runner = StepRunner(repository)
+    state = AgentFlowState(run_id="run_1", user_query="diagnose no start")
+    calls = 0
+
+    class SlowStep:
+        step_type = "slow"
+
+        async def run(
+            self,
+            state: AgentFlowState,
+            context: RuntimeContext,
+        ) -> Any:
+            nonlocal calls
+            calls += 1
+            await asyncio.sleep(0.05)
+            return type("Result", (), {"output_json": {"unexpected": True}})()
+
+    with pytest.raises(StepRunnerError) as exc_info:
+        await runner.run_runtime_step(
+            state=state,
+            step_name="slow",
+            input_json={},
+            step=SlowStep(),
+            context=RuntimeContext(
+                execution_policy=StepExecutionPolicy(
+                    deadline_ms=10,
+                    retry=RetryPolicy(max_attempts=3),
+                )
+            ),
+        )
+
+    assert calls == 1
+    assert exc_info.value.error_json["error_type"] == "TimeoutError"
+    assert exc_info.value.error_json["retryable"] is False
+    assert "deadline" in exc_info.value.error_json["message"]

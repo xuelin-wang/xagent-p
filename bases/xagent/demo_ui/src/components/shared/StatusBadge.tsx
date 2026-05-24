@@ -5,6 +5,7 @@ interface StatusBadgeProps {
 const colorMap: Record<string, string> = {
   pending: 'bg-gray-600 text-gray-100',
   running: 'bg-amber-600 text-white animate-pulse',
+  waiting: 'bg-purple-700 text-white',
   succeeded: 'bg-green-700 text-white',
   completed: 'bg-green-700 text-white',
   failed: 'bg-red-700 text-white',

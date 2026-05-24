@@ -131,6 +131,28 @@ async def _execute_tools_runs_all_calls_and_stores_results() -> None:
     assert tool_results[call_b.tool_call_id].status == "succeeded"
 
 
+def test_execute_tools_child_context_uses_call_timeout_and_deadline() -> None:
+    call = ValidatedToolCall(
+        tool_call_id="run_1:0:search:aaa",
+        tool_name="search",
+        purpose="test",
+        input={"query": "test"},
+        idempotency_key="run_1:0:search:aaa",
+        timeout_ms=25,
+        deadline_ms=100,
+    )
+    group = build_execute_tools_step(
+        validated_calls=[call],
+        executor=_FakeExecutor({call.tool_call_id: _result(call.tool_call_id)}),
+    )
+
+    child = group.children[0]
+
+    assert child.context is not None
+    assert child.context.execution_policy.timeout_ms == 25
+    assert child.context.execution_policy.deadline_ms == 100
+
+
 def test_partial_resume_skips_already_succeeded_tool_calls() -> None:
     asyncio.run(_partial_resume_skips_already_succeeded_tool_calls())
 

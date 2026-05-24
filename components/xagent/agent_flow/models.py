@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
@@ -11,6 +12,7 @@ class RunStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     PAUSED = "paused"
+    WAITING = "waiting"
     WAITING_FOR_USER = "waiting_for_user"
     FAILED = "failed"
     COMPLETED = "completed"
@@ -21,6 +23,7 @@ class FlowStage(StrEnum):
     PLANNING = "planning"
     SUBAGENTS = "subagents"
     SUMMARIZING = "summarizing"
+    WAITING = "waiting"
     WAITING_FOR_USER = "waiting_for_user"
     FINALIZING = "finalizing"
     COMPLETED = "completed"
@@ -30,6 +33,7 @@ class FlowStage(StrEnum):
 class StepStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
+    WAITING = "waiting"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     SKIPPED = "skipped"
@@ -108,6 +112,21 @@ class UserInputEvent(BaseModel):
     occurred_at: datetime
 
 
+class ConversationMessageEvent(BaseModel):
+    message_id: str
+    conversation_id: str
+    run_id: str
+    role: Literal["user", "assistant", "system"] = "user"
+    content: str
+    occurred_at: datetime
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class WaitStepSpec(BaseModel):
+    prompt: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class SummaryOutput(BaseModel):
     decision: SummaryDecision
     answer_draft: str | None = None
@@ -129,6 +148,7 @@ class AgentFlowIteration(BaseModel):
 class AgentFlowState(BaseModel):
     run_id: str
     user_query: str
+    conversation_id: str = Field(default_factory=lambda: f"conv_{uuid4().hex}")
     case_id: str | None = None
 
     status: RunStatus = RunStatus.PENDING
@@ -140,6 +160,8 @@ class AgentFlowState(BaseModel):
 
     pending_user_request: UserRequest | None = None
     user_input_events: list[UserInputEvent] = Field(default_factory=list)
+    pending_wait: WaitStepSpec | None = None
+    conversation_messages: list[ConversationMessageEvent] = Field(default_factory=list)
 
     errors: list[AgentError] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

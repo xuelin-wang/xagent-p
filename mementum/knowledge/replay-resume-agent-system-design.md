@@ -71,17 +71,17 @@ MERGE_RESULTS
   ↓
 DECIDE
   ├── REPLAN → PLAN
-  ├── ASK_USER → WAIT_FOR_USER
+  ├── WAIT → WAIT_FOR_MESSAGE
   ├── RESPOND → RESPONSE
   └── STOP_LIMIT → RESPONSE
-WAIT_FOR_USER
-  └── USER_INPUT_RECEIVED → BUILD_CONTEXT
+WAIT_FOR_MESSAGE
+  └── MESSAGE_RECEIVED → MESSAGE_INPUT → BUILD_CONTEXT
 RESPONSE
   ↓
 END
 ```
 
-`ASK_USER` is not a final answer. It emits a question or request for clarification, checkpoints the state, and moves the run to `waiting_for_user`.
+`WAIT` is not a final answer. It enters a durable wait step, checkpoints the state, and pauses the run until a new message arrives for the same conversation.
 
 `RESPONSE` is only for terminal user-visible output:
 
@@ -274,6 +274,9 @@ class StepEvent(BaseModel):
         "step_succeeded",
         "step_failed",
         "step_timed_out",
+        "step_waiting",
+        "step_resumed",
+        "step_message_received",
         "step_paused",
         "step_skipped",
     ]
@@ -315,6 +318,7 @@ class StepRecord(BaseModel):
         "succeeded",
         "failed",
         "timed_out",
+        "waiting",
         "paused",
         "skipped",
     ]
@@ -351,10 +355,11 @@ The runtime state should be explicit and serializable.
 ```python
 class AgentState(BaseModel):
     run_id: str
+    conversation_id: str
     iteration_index: int = 0
 
     input_query: AgentInput
-    user_input_events: list[UserInputEvent] = []
+    conversation_messages: list[ConversationMessageEvent] = []
 
     conversation_summary: str | None = None
 
@@ -366,7 +371,7 @@ class AgentState(BaseModel):
 
     merge_analysis: MergeAnalysis | None = None
     decision: RuntimeDecision | None = None
-    pending_user_request: UserRequest | None = None
+    pending_wait: WaitStepSpec | None = None
 
     final_response: AgentResponse | None = None
 ```
@@ -420,7 +425,7 @@ tool_call step_succeeded     → state.tool_results
 validate step_succeeded      → state.validated_tool_calls / rejected_tool_calls
 decide step_succeeded        → state.decision
 response step_succeeded      → state.final_response
-user_input_received          → state.user_input_events
+message_input step_succeeded → state.conversation_messages
 ```
 
 This replaces the `on_success` callback pattern. Instead of:
@@ -876,78 +881,152 @@ This should create a **new run**, because external systems and LLMs may produce 
 
 # 13. Pause and resume
 
-Pause should happen at step boundaries.
+Pause and resume should be modeled as normal step execution.
 
-Useful pause points:
-
-```text
-after PLAN
-before EXECUTE_TOOLS
-after EXECUTE_TOOLS
-before RESPONSE
-before any write-side actuator
-```
-
-Pause is just a completed step checkpoint plus a paused run status:
+A pause is represented by entering a durable `WaitStep`. A resume is represented
+by completing that `WaitStep`, then recording the message that resumed execution
+with a durable `MessageInputStep`.
 
 ```text
-step completed
-checkpoint written and linked from the step_succeeded event
-run status = paused
+... → A → WaitStep(waiting) → MessageInputStep → B → C → ...
 ```
 
-Resume is:
+If a workflow was originally:
 
 ```text
-load latest step_succeeded event checkpoint by sequence_index
-restore state
-continue from next_step_type
+A → B → C
 ```
 
-No special pause/resume architecture is needed.
-
-Waiting for user input is a specific pause state:
+and it pauses after `A`, the full audit after resume should be:
 
 ```text
-ASK_USER step succeeds
-checkpoint is written with pending_user_request
-run status = waiting_for_user
-next_step_type = WAIT_FOR_USER
+A succeeded
+WaitStep started
+WaitStep waiting
+new conversation message arrives
+WaitStep resumed/succeeded
+MessageInputStep succeeded
+B succeeded
+C succeeded
 ```
 
-The user reply is recorded as an append-only input event:
+The compact execution view may display `A → MessageInputStep → B → C`, but the
+audit ledger should keep the wait lifecycle explicit.
+
+## 13.1 Conversation-scoped runs
+
+Agent-flow execution is conversation scoped.
+
+- If an inbound message does not include `conversation_id`, the service creates a
+  new UUID conversation id, starts a new run, records the message with
+  `MessageInputStep`, then starts the workflow from the beginning.
+- If an inbound message includes `conversation_id`, the service loads the stored
+  execution state for that conversation from the run/checkpoint/event records.
+  If the active run is waiting, the message completes the current `WaitStep`,
+  then a `MessageInputStep` records the new message before execution continues.
+- At most one active waiting run should exist for a conversation. If multiple
+  waiting runs exist for the same conversation, the repository or service should
+  treat that as an integrity error rather than guessing which run to resume.
 
 ```python
-class UserInputEvent(BaseModel):
-    event_id: str
-    run_id: str
-    request_id: str
-    input_ref: str
+class ConversationMessageEvent(BaseModel):
+    message_id: str
+    conversation_id: str
+    role: Literal["user", "assistant", "system"]
+    content_ref: str
     occurred_at: datetime
+    metadata: dict[str, Any] = {}
 ```
 
-The pending request should also be explicit in state:
+The message content may be stored inline for small payloads or by artifact
+reference for large payloads, but it must be durable and replayable.
+
+## 13.2 WaitStep
+
+`WaitStep` is a normal runtime step. It exists in the workflow tree or is inserted
+at a step boundary by runtime control logic, for example for a debug pause or a
+summary decision that asks for more conversation input.
 
 ```python
-class UserRequest(BaseModel):
-    request_id: str
-    prompt: str
-    required: bool = True
+class WaitStepSpec(BaseModel):
+    prompt: str | None = None
+    metadata: dict[str, Any] = {}
 ```
 
-Resume with user input:
+The wait step does not evaluate message contents. Its only responsibility is to
+pause the workflow until a new message arrives for the same `conversation_id`.
 
 ```text
-append UserInputEvent
-load latest step_succeeded checkpoint
-restore state
-attach user input event to state.user_input_events
-clear pending_user_request
-set run status = running
-continue from BUILD_CONTEXT or the configured next step
+WaitStep.run()
+→ records wait metadata, such as prompt
+→ writes step_waiting event
+→ checkpoints state
+→ sets run status = waiting
 ```
 
-The original run continues; this is not a new run. The new user input is an explicit durable input record so audit playback can show exactly where the agent paused and what user data resumed it.
+The run is not terminal while waiting. It is paused on a specific durable step.
+
+## 13.3 MessageInputStep
+
+`MessageInputStep` records an inbound conversation message. It is used both for
+new runs and resumed runs, so it should not be named `ResumeStep`.
+
+```python
+class MessageInputStep(RuntimeStep):
+    step_type = "message_input"
+```
+
+For a new conversation:
+
+```text
+MessageInputStep → A → B → C
+```
+
+For a resumed conversation:
+
+```text
+A → WaitStep → MessageInputStep → B → C
+```
+
+The state projection for `MessageInputStep` should append the message to
+`state.conversation_messages` and update any derived current input fields used by
+planner or context-building steps.
+
+## 13.4 Resume entrypoint
+
+The application-facing entrypoint should be message oriented:
+
+```python
+async def handle_conversation_message(
+    *,
+    conversation_id: str | None,
+    content: str,
+    metadata: dict[str, Any] | None = None,
+) -> AgentState:
+    ...
+```
+
+Behavior:
+
+```text
+conversation_id missing
+  → create conversation UUID
+  → create run
+  → execute MessageInputStep
+  → continue from workflow start
+
+conversation_id present and active run is waiting
+  → load latest checkpoint/event-derived state
+  → mark current WaitStep resumed/succeeded
+  → execute MessageInputStep with new message
+  → continue after the wait point
+
+conversation_id present and no run is waiting
+  → policy decision: start a new run in the conversation or reject as conflict
+```
+
+This keeps pause/resume separate from message interpretation. A later planner,
+summary, or context-building step decides what the new message means.
 
 ---
 
@@ -962,7 +1041,7 @@ Evaluator input:
 ```text
 run record
 step event ledger
-user input events
+conversation message events
 final response
 planner output
 validated tool calls
@@ -1027,7 +1106,7 @@ Use only a few durable concepts:
 ```text
 runs
 snapshots
-user_input_events
+conversation_message_events
 step_events
 steps projection
 checkpoints
@@ -1051,15 +1130,16 @@ run status should include:
   pending
   running
   paused
-  waiting_for_user
+  waiting
   completed
   failed
 
-user_input_events
-  event_id
+conversation_message_events
+  message_id
+  conversation_id
   run_id
-  request_id
-  input_ref
+  role
+  content_ref
   occurred_at
 
 snapshots

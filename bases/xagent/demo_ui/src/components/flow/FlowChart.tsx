@@ -35,6 +35,7 @@ function hasNonSkipped(
 }
 
 export function FlowChart({ state, audit, onSelectStep }: FlowChartProps) {
+  const isWaiting = state.status === 'waiting' || state.status === 'waiting_for_user'
   if (state.iterations.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 p-6">
@@ -43,8 +44,8 @@ export function FlowChart({ state, audit, onSelectStep }: FlowChartProps) {
             ? 'Run in progress — waiting for first iteration…'
             : 'No iterations recorded.'}
         </p>
-        {state.status === 'waiting_for_user' && (
-          <WaitingNode request={state.pending_user_request} />
+        {isWaiting && (
+          <WaitingNode request={state.pending_user_request} wait={state.pending_wait} />
         )}
         <FinalResult state={state} />
       </div>
@@ -78,8 +79,8 @@ export function FlowChart({ state, audit, onSelectStep }: FlowChartProps) {
   return (
     <div className="flex flex-col items-center gap-4 p-6">
       {elements}
-      {state.status === 'waiting_for_user' && (
-        <WaitingNode request={state.pending_user_request} />
+      {isWaiting && (
+        <WaitingNode request={state.pending_user_request} wait={state.pending_wait} />
       )}
       <FinalResult state={state} />
     </div>

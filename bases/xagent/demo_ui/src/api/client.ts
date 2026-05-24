@@ -21,6 +21,7 @@ export const api = {
 
   createRun(payload: {
     query: string
+    conversation_id?: string
     case_id?: string
     metadata?: Record<string, unknown>
   }): Promise<AgentFlowState> {
@@ -39,6 +40,17 @@ export const api = {
       `${BASE}/runs/${encodeURIComponent(id)}/resume`,
       { method: 'POST' }
     )
+  },
+
+  sendMessage(payload: {
+    content: string
+    conversation_id?: string
+    metadata?: Record<string, unknown>
+  }): Promise<AgentFlowState> {
+    return request<AgentFlowState>(`${BASE}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
   },
 
   submitInput(id: string, content: string): Promise<AgentFlowState> {

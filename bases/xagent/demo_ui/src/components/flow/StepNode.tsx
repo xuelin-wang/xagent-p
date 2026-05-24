@@ -12,6 +12,7 @@ interface StepNodeProps {
 const borderColor: Record<StepStatus, string> = {
   pending: 'border-gray-600',
   running: 'border-amber-500',
+  waiting: 'border-purple-500',
   succeeded: 'border-green-500',
   failed: 'border-red-500',
   skipped: 'border-slate-500',

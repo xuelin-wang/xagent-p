@@ -120,16 +120,45 @@ class AgentFlowService:
         self,
         *,
         user_query: str,
+        conversation_id: str | None = None,
         case_id: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> AgentFlowState:
         state = AgentFlowState(
             run_id=f"run_{uuid4().hex}",
             user_query=user_query,
+            conversation_id=conversation_id or f"conv_{uuid4().hex}",
             case_id=case_id,
             metadata=metadata or {},
         )
         return await self._runtime.run(state)
+
+    async def handle_conversation_message(
+        self,
+        *,
+        content: str,
+        conversation_id: str | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> AgentFlowState:
+        if conversation_id is not None:
+            waiting = await self._latest_waiting_run_for_conversation(conversation_id)
+            if waiting is not None:
+                return await self._runtime.resume_with_message(
+                    waiting,
+                    content=content,
+                    metadata=metadata,
+                )
+        state = AgentFlowState(
+            run_id=f"run_{uuid4().hex}",
+            user_query=content,
+            conversation_id=conversation_id or f"conv_{uuid4().hex}",
+            metadata=metadata or {},
+        )
+        return await self._runtime.run_with_message(
+            state,
+            content=content,
+            metadata=metadata,
+        )
 
     async def list_runs(self) -> list[AgentFlowState]:
         return await self._run_repository.list_runs()
@@ -150,6 +179,7 @@ class AgentFlowService:
         if state.status in {
             RunStatus.COMPLETED,
             RunStatus.FAILED,
+            RunStatus.WAITING,
             RunStatus.WAITING_FOR_USER,
         }:
             return state
@@ -159,6 +189,21 @@ class AgentFlowService:
         checkpoint = await self._checkpoint_repository.get_latest_checkpoint(run_id)
         state = checkpoint or await self._run_repository.get_run_state(run_id)
         return await self._runtime.resume_with_input(state, user_input)
+
+    async def _latest_waiting_run_for_conversation(
+        self,
+        conversation_id: str,
+    ) -> AgentFlowState | None:
+        runs = await self._run_repository.list_runs()
+        waiting = [
+            run
+            for run in runs
+            if run.conversation_id == conversation_id
+            and run.status in {RunStatus.WAITING, RunStatus.WAITING_FOR_USER}
+        ]
+        if not waiting:
+            return None
+        return waiting[-1]
 
 
 class AgentFlowExecutorFactory:

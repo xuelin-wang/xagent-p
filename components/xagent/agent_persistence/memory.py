@@ -146,6 +146,31 @@ class InMemoryStepRepository:
         self._append_new_step_event(updated, StepEventType.SUCCEEDED)
         return updated.model_copy(deep=True)
 
+    async def mark_step_waiting(
+        self,
+        step_id: str,
+        output_json: dict[str, Any],
+        checkpoint_id: str | None = None,
+    ) -> StepRecord:
+        step = self._get_step(step_id)
+        updated = step.model_copy(
+            update={
+                "status": StepStatus.WAITING,
+                "output_json": output_json.copy(),
+                "error_json": None,
+                "checkpoint_id": checkpoint_id,
+            },
+            deep=True,
+        )
+        self._steps_by_id[step_id] = updated
+        self._append_new_step_event(updated, StepEventType.WAITING)
+        return updated.model_copy(deep=True)
+
+    async def mark_step_resumed(self, step_id: str) -> StepRecord:
+        step = self._get_step(step_id)
+        self._append_new_step_event(step, StepEventType.RESUMED)
+        return step.model_copy(deep=True)
+
     async def mark_step_failed(
         self,
         step_id: str,
@@ -300,6 +325,8 @@ class InMemoryStepRepository:
             status = {
                 StepEventType.CREATED: StepStatus.PENDING,
                 StepEventType.STARTED: StepStatus.RUNNING,
+                StepEventType.WAITING: StepStatus.WAITING,
+                StepEventType.RESUMED: current.status,
                 StepEventType.SUCCEEDED: StepStatus.SUCCEEDED,
                 StepEventType.FAILED: StepStatus.FAILED,
             }[event.event_type]

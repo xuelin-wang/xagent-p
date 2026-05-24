@@ -10,7 +10,8 @@ interface AuditLogProps {
 export function AuditLog({ audit, state }: AuditLogProps) {
   const prevCountRef = useRef(0)
   const steps = audit?.steps ?? []
-  const currentCount = steps.length
+  const messages = audit?.conversation_messages ?? state.conversation_messages
+  const currentCount = steps.length + messages.length
   const prevCount = prevCountRef.current
   prevCountRef.current = currentCount
 
@@ -36,6 +37,13 @@ export function AuditLog({ audit, state }: AuditLogProps) {
             key={step.step_id}
             step={step}
             isNew={i >= prevCount}
+          />
+        ))}
+        {messages.map((evt, i) => (
+          <AuditRow
+            key={evt.message_id}
+            messageEvent={evt}
+            isNew={steps.length + i >= prevCount}
           />
         ))}
         {state.user_input_events.map((evt) => (

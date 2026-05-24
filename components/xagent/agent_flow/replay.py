@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from xagent.agent_flow.models import (
     AgentFlowState,
+    ConversationMessageEvent,
     RunStatus,
     StepStatus,
     UserInputEvent,
@@ -65,6 +66,7 @@ class RunAuditRecord(BaseModel):
     current_iteration: int
     steps: list[StepAuditEntry] = Field(default_factory=list)
     user_input_events: list[UserInputEvent] = Field(default_factory=list)
+    conversation_messages: list[ConversationMessageEvent] = Field(default_factory=list)
 
 
 async def build_audit_record(
@@ -107,6 +109,7 @@ async def build_audit_record(
             for step in all_steps
         ],
         user_input_events=state.user_input_events,
+        conversation_messages=state.conversation_messages,
     )
 
 

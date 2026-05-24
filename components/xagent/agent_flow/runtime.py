@@ -5,12 +5,15 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from xagent.agent_flow.config import AgentFlowAppConfig
-from xagent.agent_flow.errors import StepRunnerError
+from xagent.agent_flow.errors import StepRunnerError, StepWaiting
+from xagent.agent_flow.messages import MessageInputStep
 from xagent.agent_flow.models import (
     AgentError,
     AgentFlowState,
+    ConversationMessageEvent,
     FlowStage,
     RunStatus,
+    StepStatus,
     SummaryDecision,
     UserInputEvent,
 )
@@ -53,6 +56,21 @@ class AgentFlowRuntime:
     async def run(self, state: AgentFlowState) -> AgentFlowState:
         return await self._run_loop(state, create_run=True)
 
+    async def run_with_message(
+        self,
+        state: AgentFlowState,
+        *,
+        content: str,
+        metadata: dict[str, object] | None = None,
+    ) -> AgentFlowState:
+        await self._run_repository.create_run(state)
+        state = await self._record_message(
+            state,
+            content=content,
+            metadata=metadata,
+        )
+        return await self._run_loop(state, create_run=False)
+
     async def resume(self, state: AgentFlowState) -> AgentFlowState:
         base = await self._checkpoint_repository.get_latest_checkpoint(state.run_id)
         if base is None:
@@ -82,6 +100,16 @@ class AgentFlowRuntime:
         while True:
             try:
                 state_after = await self._run_iteration(state)
+            except StepWaiting as exc:
+                wait_state = (
+                    exc.state.model_copy(deep=True)
+                    if exc.state is not None
+                    else state.model_copy(deep=True)
+                )
+                wait_state.pending_wait = exc.wait_spec
+                wait_state.status = RunStatus.WAITING
+                wait_state.current_stage = FlowStage.WAITING
+                return await self._pause_state(wait_state)
             except StepRunnerError as exc:
                 return await self._fail_state(
                     state,
@@ -140,20 +168,13 @@ class AgentFlowRuntime:
                 )
 
             if current_iteration.summary.decision is SummaryDecision.ASK_USER:
-                user_request = current_iteration.summary.user_request
-                if user_request is None:
-                    return await self._fail_state(
-                        state_after,
-                        AgentError(
-                            stage=FlowStage.SUMMARIZING,
-                            message="ASK_USER decision requires user_request in SummaryOutput.",
-                        ),
-                    )
-                wait_state = state_after.model_copy(deep=True)
-                wait_state.pending_user_request = user_request
-                wait_state.status = RunStatus.WAITING_FOR_USER
-                wait_state.current_stage = FlowStage.WAITING_FOR_USER
-                return await self._pause_state(wait_state)
+                return await self._fail_state(
+                    state_after,
+                    AgentError(
+                        stage=FlowStage.SUMMARIZING,
+                        message="ASK_USER decision did not enter a wait step.",
+                    ),
+                )
 
             if current_iteration.summary.decision is SummaryDecision.FAIL:
                 return await self._fail_state(
@@ -203,7 +224,12 @@ class AgentFlowRuntime:
         )
 
         result = await self._step_runner.execute_composite(
-            workflow_step, state, RuntimeContext()
+            workflow_step,
+            state,
+            RuntimeContext.from_runtime_policy(
+                self._config.execution_policy,
+                step_type=workflow_step.step_type,
+            ),
         )
         state_after = result.state_after if result.state_after is not None else state
         await self._save_state(state_after, checkpoint_name="iteration")
@@ -252,11 +278,36 @@ class AgentFlowRuntime:
         await self._checkpoint_repository.save_checkpoint(
             run_id=state.run_id,
             iteration=state.current_iteration,
-            checkpoint_name="ask_user",
+            checkpoint_name="wait",
             stage=state.current_stage,
             state=state,
         )
         return state
+
+    async def resume_with_message(
+        self,
+        state: AgentFlowState,
+        *,
+        content: str,
+        metadata: dict[str, object] | None = None,
+    ) -> AgentFlowState:
+        """Resume a waiting run by completing its wait step and recording a message."""
+        if state.status not in {RunStatus.WAITING, RunStatus.WAITING_FOR_USER}:
+            raise ValueError(f"Expected waiting status, got: {state.status}")
+
+        resumed = state.model_copy(deep=True)
+        await self._complete_waiting_steps(resumed)
+        resumed.pending_wait = None
+        resumed.pending_user_request = None
+        resumed.current_iteration += 1
+        resumed.current_stage = FlowStage.START
+        resumed.status = RunStatus.RUNNING
+        resumed = await self._record_message(
+            resumed,
+            content=content,
+            metadata=metadata,
+        )
+        return await self._run_loop(resumed, create_run=False)
 
     async def resume_with_input(
         self,
@@ -264,25 +315,70 @@ class AgentFlowRuntime:
         user_input: str,
     ) -> AgentFlowState:
         """Resume a waiting_for_user run by attaching a user input event."""
-        if state.status is not RunStatus.WAITING_FOR_USER:
-            raise ValueError(f"Expected waiting_for_user status, got: {state.status}")
-        if state.pending_user_request is None:
-            raise ValueError("No pending user request found in state")
-
+        if state.status not in {RunStatus.WAITING, RunStatus.WAITING_FOR_USER}:
+            raise ValueError(f"Expected waiting status, got: {state.status}")
+        request_id = "conversation_message"
+        if state.pending_user_request is not None:
+            request_id = state.pending_user_request.request_id
+        elif state.pending_wait is not None:
+            request_id = str(state.pending_wait.metadata.get("request_id", request_id))
         event = UserInputEvent(
             event_id=str(uuid4()),
             run_id=state.run_id,
-            request_id=state.pending_user_request.request_id,
+            request_id=request_id,
             content=user_input,
             occurred_at=datetime.now(UTC),
         )
         new_state = state.model_copy(deep=True)
         new_state.user_input_events.append(event)
-        new_state.pending_user_request = None
-        new_state.current_iteration += 1
-        new_state.current_stage = FlowStage.START
-        await self._save_state(new_state, checkpoint_name="user_input")
-        return await self._run_loop(new_state, create_run=False)
+        return await self.resume_with_message(new_state, content=user_input)
+
+    async def _record_message(
+        self,
+        state: AgentFlowState,
+        *,
+        content: str,
+        metadata: dict[str, object] | None = None,
+    ) -> AgentFlowState:
+        message = ConversationMessageEvent(
+            message_id=f"msg_{uuid4().hex}",
+            conversation_id=state.conversation_id,
+            run_id=state.run_id,
+            role="user",
+            content=content,
+            occurred_at=datetime.now(UTC),
+            metadata=dict(metadata or {}),
+        )
+        output_json = await self._step_runner.run_runtime_step(
+            state=state,
+            step_name=f"message_input:{message.message_id}",
+            input_json=message.model_dump(mode="json"),
+            step=MessageInputStep(message=message),
+            context=RuntimeContext.from_runtime_policy(
+                self._config.execution_policy,
+                step_type="message_input",
+            ),
+        )
+        next_state = state.model_copy(deep=True)
+        next_state.conversation_messages.append(
+            ConversationMessageEvent.model_validate(output_json["message"])
+        )
+        next_state.user_query = content
+        await self._save_state(next_state, checkpoint_name="message_input")
+        return next_state
+
+    async def _complete_waiting_steps(self, state: AgentFlowState) -> None:
+        steps = await self._step_repository.get_steps_for_run_iteration(
+            state.run_id,
+            state.current_iteration,
+        )
+        for step in steps:
+            if step.status is StepStatus.WAITING:
+                await self._step_repository.mark_step_resumed(step.step_id)
+                await self._step_repository.mark_step_succeeded(
+                    step.step_id,
+                    step.output_json or {},
+                )
 
     async def _save_state(
         self,

@@ -4,9 +4,9 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from dataclasses import field as dc_field
-from typing import Any
+from typing import Any, cast
 
-from xagent.agent_flow.errors import NonRetryableStepError, StepRunnerError
+from xagent.agent_flow.errors import NonRetryableStepError, StepRunnerError, StepWaiting
 from xagent.agent_flow.models import AgentFlowState, StepStatus
 from xagent.agent_flow.state_projection import _apply
 from xagent.agent_flow.steps import (
@@ -14,6 +14,7 @@ from xagent.agent_flow.steps import (
     RuntimeContext,
     RuntimeStep,
     SequenceStepGroup,
+    StepExecutionPolicy,
     StepResult,
 )
 from xagent.agent_persistence.repositories import (
@@ -21,7 +22,7 @@ from xagent.agent_persistence.repositories import (
     StepRepository,
 )
 
-StepFunction = Callable[[StepRecord], Awaitable[dict[str, Any]]]
+StepFunction = Callable[[StepRecord], Awaitable[dict[str, Any] | StepResult]]
 
 
 @dataclass
@@ -67,6 +68,7 @@ class StepRunner:
             step_type=step.step_type,
             input_json=input_json,
             max_attempts=context.execution_policy.retry.max_attempts,
+            execution_policy=context.execution_policy,
             fn=lambda _: self._run_runtime_step(
                 step=step,
                 state=state,
@@ -85,8 +87,10 @@ class StepRunner:
         max_attempts: int,
         fn: StepFunction,
         parent_step_id: str | None = None,
+        execution_policy: StepExecutionPolicy | None = None,
     ) -> dict[str, Any]:
         attempts = max(max_attempts, 1)
+        policy = execution_policy or StepExecutionPolicy()
         step = await self._step_repository.create_or_get_step(
             run_id=state.run_id,
             iteration=state.current_iteration,
@@ -113,12 +117,31 @@ class StepRunner:
             )
 
         current_step = step
+        deadline_at = self._deadline_at(policy)
         while current_step.attempt_count < current_step.max_attempts:
             current_step = await self._step_repository.mark_step_running(
                 current_step.step_id
             )
             try:
-                output_json = await fn(current_step)
+                raw_output = await self._run_with_policy(
+                    fn(current_step),
+                    policy=policy,
+                    deadline_at=deadline_at,
+                )
+                if isinstance(raw_output, StepResult):
+                    output_json = raw_output.output_json
+                    if raw_output.wait_spec is not None:
+                        waiting_step = await self._step_repository.mark_step_waiting(
+                            current_step.step_id,
+                            output_json,
+                        )
+                        raise StepWaiting(
+                            step=waiting_step,
+                            output_json=output_json,
+                            wait_spec=raw_output.wait_spec,
+                        )
+                else:
+                    output_json = raw_output
             except NonRetryableStepError as exc:
                 error_json = self._error_json(exc, retryable=False)
                 failed_step = await self._step_repository.mark_step_failed(
@@ -130,8 +153,14 @@ class StepRunner:
                     step=failed_step,
                     error_json=error_json,
                 ) from exc
+            except StepWaiting:
+                raise
             except Exception as exc:
-                retryable = current_step.attempt_count < current_step.max_attempts
+                retryable = self._is_retryable(
+                    current_step=current_step,
+                    policy=policy,
+                    deadline_at=deadline_at,
+                )
                 error_json = self._error_json(exc, retryable=retryable)
                 failed_step = await self._step_repository.mark_step_failed(
                     current_step.step_id,
@@ -169,14 +198,78 @@ class StepRunner:
             "retryable": retryable,
         }
 
+    def _deadline_at(self, policy: StepExecutionPolicy) -> float | None:
+        if policy.deadline_ms is None or policy.deadline_ms == 0:
+            return None
+        return asyncio.get_running_loop().time() + (policy.deadline_ms / 1000)
+
+    async def _run_with_policy(
+        self,
+        awaitable: Awaitable[dict[str, Any] | StepResult],
+        *,
+        policy: StepExecutionPolicy,
+        deadline_at: float | None,
+    ) -> dict[str, Any] | StepResult:
+        wait_seconds = self._wait_seconds(policy=policy, deadline_at=deadline_at)
+        if wait_seconds is None:
+            return await awaitable
+        if wait_seconds <= 0:
+            if hasattr(awaitable, "close"):
+                cast(Any, awaitable).close()
+            raise TimeoutError("Step deadline expired before execution.")
+        try:
+            return await asyncio.wait_for(awaitable, timeout=wait_seconds)
+        except TimeoutError as exc:
+            raise TimeoutError(self._timeout_message(policy, deadline_at)) from exc
+
+    def _wait_seconds(
+        self,
+        *,
+        policy: StepExecutionPolicy,
+        deadline_at: float | None,
+    ) -> float | None:
+        candidates: list[float] = []
+        if policy.timeout_ms is not None and policy.timeout_ms > 0:
+            candidates.append(policy.timeout_ms / 1000)
+        if deadline_at is not None:
+            candidates.append(deadline_at - asyncio.get_running_loop().time())
+        if not candidates:
+            return None
+        return min(candidates)
+
+    def _timeout_message(
+        self,
+        policy: StepExecutionPolicy,
+        deadline_at: float | None,
+    ) -> str:
+        if deadline_at is not None and deadline_at <= asyncio.get_running_loop().time():
+            return f"Step deadline exceeded after {policy.deadline_ms} ms."
+        return f"Step timed out after {policy.timeout_ms} ms."
+
+    def _is_retryable(
+        self,
+        *,
+        current_step: StepRecord,
+        policy: StepExecutionPolicy,
+        deadline_at: float | None,
+    ) -> bool:
+        has_attempts = current_step.attempt_count < current_step.max_attempts
+        if not has_attempts:
+            return False
+        if deadline_at is None:
+            return True
+        return deadline_at > asyncio.get_running_loop().time()
+
     async def _run_runtime_step(
         self,
         *,
         step: RuntimeStep,
         state: AgentFlowState,
         context: RuntimeContext,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | StepResult:
         result = await step.run(state=state, context=context)
+        if isinstance(result, StepResult):
+            return result
         return result.output_json
 
     async def execute_composite(
@@ -212,14 +305,22 @@ class StepRunner:
         step_record = await self._step_repository.mark_step_running(step_record.step_id)
 
         try:
-            if isinstance(group, SequenceStepGroup):
-                result = await self._execute_sequence(
-                    group, state, context, step_record.step_id
-                )
-            else:
-                result = await self._execute_parallel(
-                    group, state, context, step_record.step_id
-                )
+            result = await self._run_composite_with_policy(
+                group=group,
+                state=state,
+                context=context,
+                parent_step_id=step_record.step_id,
+                policy=context.execution_policy,
+            )
+        except StepWaiting as exc:
+            await self._step_repository.mark_step_waiting(
+                step_record.step_id,
+                {
+                    "waiting_child_step_id": exc.step.step_id,
+                    "wait_spec": exc.output_json.get("wait_spec", {}),
+                },
+            )
+            raise
         except Exception as exc:
             error_json = self._error_json(exc, retryable=False)
             await self._step_repository.mark_step_failed(
@@ -232,6 +333,33 @@ class StepRunner:
             result.output_json,
         )
         return result
+
+    async def _run_composite_with_policy(
+        self,
+        *,
+        group: SequenceStepGroup | ParallelStepGroup,
+        state: AgentFlowState,
+        context: RuntimeContext,
+        parent_step_id: str,
+        policy: StepExecutionPolicy,
+    ) -> StepResult:
+        async def run_group() -> StepResult:
+            if isinstance(group, SequenceStepGroup):
+                return await self._execute_sequence(
+                    group, state, context, parent_step_id
+                )
+            return await self._execute_parallel(group, state, context, parent_step_id)
+
+        deadline_at = self._deadline_at(policy)
+        wait_seconds = self._wait_seconds(policy=policy, deadline_at=deadline_at)
+        if wait_seconds is None:
+            return await run_group()
+        if wait_seconds <= 0:
+            raise TimeoutError("Step deadline expired before execution.")
+        try:
+            return await asyncio.wait_for(run_group(), timeout=wait_seconds)
+        except TimeoutError as exc:
+            raise TimeoutError(self._timeout_message(policy, deadline_at)) from exc
 
     async def _execute_sequence(
         self,
@@ -248,7 +376,14 @@ class StepRunner:
                     continue
             else:
                 child = spec
-            result = await self._execute_child(child, current, context, parent_step_id)
+            try:
+                result = await self._execute_child(
+                    child, current, context, parent_step_id
+                )
+            except StepWaiting as exc:
+                if exc.state is None:
+                    exc.state = current
+                raise
             if result.state_after is not None:
                 current = result.state_after
         return StepResult(output_json={}, state_after=current)
@@ -289,8 +424,12 @@ class StepRunner:
         context: RuntimeContext,
         parent_step_id: str,
     ) -> StepResult:
-        effective_context = child.context if child.context is not None else context
         step = child.step
+        step_type = step.step_type
+        effective_context = context.for_child(
+            step_type=step_type,
+            override=child.context,
+        )
         input_json = (
             child.input_json(state) if callable(child.input_json) else child.input_json
         )
@@ -300,14 +439,18 @@ class StepRunner:
                 step, state, effective_context, parent_step_id=parent_step_id
             )
 
-        output_json = await self.run_runtime_step(
-            state=state,
-            step_name=child.step_name,
-            input_json=input_json,
-            step=step,
-            context=effective_context,
-            parent_step_id=parent_step_id,
-        )
+        try:
+            output_json = await self.run_runtime_step(
+                state=state,
+                step_name=child.step_name,
+                input_json=input_json,
+                step=step,
+                context=effective_context,
+                parent_step_id=parent_step_id,
+            )
+        except StepWaiting as exc:
+            exc.state = _apply(state, child.step_name, exc.output_json)
+            raise
         return StepResult(
             output_json=output_json,
             state_after=_apply(state, child.step_name, output_json),

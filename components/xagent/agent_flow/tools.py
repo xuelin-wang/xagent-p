@@ -90,4 +90,10 @@ def _context_for_call(call: ValidatedToolCall) -> RuntimeContext:
         if call.retry_policy is not None
         else RetryPolicy(max_attempts=1)
     )
-    return RuntimeContext(execution_policy=StepExecutionPolicy(retry=retry))
+    return RuntimeContext(
+        execution_policy=StepExecutionPolicy(
+            timeout_ms=call.timeout_ms,
+            deadline_ms=call.deadline_ms,
+            retry=retry,
+        )
+    )
