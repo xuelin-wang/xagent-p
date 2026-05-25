@@ -46,6 +46,8 @@ Record rules that should remain true unless an explicit design change updates co
 - Execution-policy time values are milliseconds. `timeout_ms` applies per attempt, `deadline_ms` applies to the total step or composite execution, and unset or `0` values are unbounded. Negative timeout or deadline values are invalid config.
 - Agent-flow execution policy must flow through the step tree: top-level steps use `agent_flow.execution_policy`, child steps inherit their parent composite policy, app step-type overrides may refine inherited policy, and local child contexts may override inherited fields.
 - Pause/resume should use durable `WaitStep` and `MessageInputStep` records tied to `conversation_id`; a new message resumes the waiting run, and the audit trail should preserve both the pause point and the inbound message.
+- Execution records and business/domain records are separate. Step events and checkpoints are the replay ledger; facts and case plans are immutable domain records linked back to the run/step that produced them.
+- Facts may use immutable edges like `derived_from`, `negates`, and `refines` to relate to older facts. Case plans do not need plan-to-plan edges and are current by latest record only.
 
 ## Source Pointers
 

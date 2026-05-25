@@ -21,6 +21,7 @@
 - Keep deployment secrets outside committed values files except disposable local `kind` overrides.
 - The replay/resume implementation is complete. The next decision is which gap to address: real tool execution or evaluation quality metrics (see open questions).
 - A React + Vite demo UI (`bases/xagent/demo_ui/`) is implemented for visualising agent-flow runs: flow chart, append-only audit log, state JSON, step detail panel, conversation id, and wait/message resume markers.
+- Durable case/business records are now being designed separately from step execution records: facts are immutable and may carry relationship edges, while case plans are immutable latest-wins records with no plan-to-plan edges.
 
 ## Next Steps
 
@@ -56,6 +57,7 @@
 - Two new HTTP endpoints added to `routes_agent_flow.py`: `GET /agent-flow/runs` (list all runs) and `GET /agent-flow/runs/{run_id}/audit` (fetch `RunAuditRecord`).
 - Agent-flow execution policy is now a top-level app config element (`agent_flow.execution_policy`). `StepRunner` enforces `timeout_ms` and `deadline_ms` with `asyncio.wait_for`; values are milliseconds, `0` means unbounded, and negative values are rejected. Top-level steps use app policy; composite children inherit parent policy; step-type and local overrides can refine it.
 - Agent-flow pause/resume now uses durable `WaitStep` and `MessageInputStep` records tied to `conversation_id`; the audit shape is `A -> WaitStep -> MessageInputStep -> B -> C`, including resumed runs.
+- Domain records should be written at the semantic owner boundary, not necessarily the whole workflow boundary: for example, a subagent can persist facts when it finishes if those facts are already stable.
 
 ## Source Pointers
 
