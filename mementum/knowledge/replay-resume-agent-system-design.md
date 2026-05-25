@@ -246,6 +246,68 @@ Do not create separate mechanisms for each.
 
 ---
 
+# 5.1 Domain records separate from execution records
+
+Execution records explain what the runtime did. Domain records explain what the business learned or decided.
+
+Keep them separate:
+
+- execution records: step events, checkpoints, replay artifacts, projections
+- domain records: facts, case plans, notes, assessments, other case meaning
+
+Domain records are immutable and linked back to the run, conversation, and semantic owner step that produced them.
+
+### Facts
+
+Facts are append-only records that may relate to older facts through immutable edges:
+
+```python
+class DomainRecordEdge(BaseModel):
+    edge_id: str
+    from_record_id: str
+    to_record_id: str
+    relation: str  # derived_from, negates, refines, supersedes, ...
+    created_at: datetime
+    metadata: dict[str, Any] = Field(default_factory=dict)
+```
+
+Useful fact relations:
+
+- `derived_from`
+- `negates`
+- `refines`
+- `supersedes`
+- `corroborates`
+
+The latest projection can decide which facts are active, but the immutable history stays intact.
+
+### Case plans
+
+Case plans are also append-only, but simpler:
+
+- no plan-to-plan edges
+- no inactive flag
+- latest plan is always the current plan
+
+The business view is therefore:
+
+```text
+current_plan = latest CasePlanRecord
+```
+
+### Write boundary
+
+Do not wait for the whole workflow unless the meaning only becomes stable at that boundary.
+Write domain records when the semantic owner has finished producing a stable result.
+
+Examples:
+
+- a subagent finishes and persists a diagnostic fact
+- summary finishes and persists a case plan
+- finalization finishes and persists a final assessment
+
+---
+
 # 5. Append-only step event ledger
 
 Every step writes append-only lifecycle events.

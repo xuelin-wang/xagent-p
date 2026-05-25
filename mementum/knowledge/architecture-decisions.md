@@ -211,6 +211,9 @@ Decision:
 - Consider a step complete only when its state-after checkpoint and `step_succeeded` event are committed as one logical unit.
 - Execute each validated tool call as a durable child `tool_call` step with stable `tool_call_id` and `idempotency_key`.
 - Represent pause/resume as a durable `WaitStep` plus `MessageInputStep` on the same `conversation_id`; a new message resumes the waiting run and is recorded in the audit trail. Keep `submit_user_input` only as compatibility glue.
+- Keep execution records and business/domain records separate. Step events, checkpoints, and replay data explain what the runtime did; immutable domain records explain what the business learned or decided.
+- Facts are append-only domain records and may carry relationship edges such as `derived_from`, `negates`, and `refines`. Case plans are append-only latest-wins records with no plan-to-plan edges.
+- Domain records should be written by the semantic owner step or composite when the meaning is stable, not necessarily at the whole-workflow boundary.
 - Resolve timeout, deadline, retry, and continue-on-failure behavior through global execution policy plus optional per-step/tool overrides.
 
 Rationale:
@@ -223,7 +226,7 @@ Rationale:
 Implications:
 - Future agent-flow work should follow `mementum/knowledge/replay-resume-agent-implementation-plan.md` and its conformance checklist.
 - New runtime code should extend the existing `agent_flow` and `agent_persistence` components rather than introducing a generic graph engine or parallel package.
-- Replay and evaluation should consume recorded runs, events, checkpoints, artifacts, snapshots, wait steps, and conversation message steps without rerunning nondeterministic steps.
+- Replay and evaluation should consume recorded runs, events, checkpoints, artifacts, snapshots, wait steps, conversation message steps, and domain records without rerunning nondeterministic steps.
 - Write-side actuator retries require idempotency support or explicit policy approval.
 
 Source pointers:
