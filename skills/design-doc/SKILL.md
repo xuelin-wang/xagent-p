@@ -14,6 +14,23 @@ A design document is a decision-making artifact. Its job is to help reviewers un
 
 Optimize for decision clarity, not document length.
 
+## Interaction Rule
+
+Do not require the user to provide long repeated prompts.
+
+When the user asks for design-doc help, infer the intended task mode and apply the corresponding workflow automatically.
+
+Examples:
+
+* “Create a design doc from these notes” → Notes to Outline or Draft Design Doc
+* “Review this design doc” → Review Design Doc
+* “Make this shorter” → Compress Design Doc
+* “Improve this section” → Revise Design Doc
+* “What are the open questions?” → Extract Decisions
+* “This doc is getting too long” → Split Parent Doc and Sub-Docs or Compress Design Doc
+* “Is this ready to share?” → Final Review Before Sharing
+
+
 ## Core Principles
 
 ### 1. Make the decision clear
@@ -91,11 +108,172 @@ Use this skill when the user asks to:
 * Split a parent design doc from sub-design docs
 * Prepare a document for technical review
 
+## Human-in-the-Loop Design Rule
+
+Design documents represent design judgment, not just polished writing.
+
+The agent may draft, organize, critique, compress, and clarify the document, but the human owner is responsible for the actual design decisions, tradeoffs, and final approval.
+
+When drafting or revising a design document, distinguish clearly between:
+
+* **Confirmed:** information explicitly provided by the user or source material
+* **Assumption:** a reasonable inference made because context is missing
+* **Open Question:** an unresolved decision that needs human judgment
+* **Suggestion:** an improvement proposed by the agent
+
+Do not present assumptions as confirmed facts.
+
+Do not invent product requirements, architectural constraints, or tradeoff decisions unless they are clearly labeled as assumptions or suggestions.
+
+If context is incomplete, proceed with a best-effort draft when useful, but make uncertainty visible.
+
+## AI-Generated Document Quality Rule
+
+Avoid the common failure mode of AI-generated design documents: polished but generic prose.
+
+Do not fill every template section mechanically.
+
+Do not add content merely because the section exists.
+
+Do not expand obvious statements into long explanations.
+
+Do not smooth over real uncertainty or tradeoffs.
+
+Do not make the design sound more decided than it is.
+
+Prefer a shorter document with clear decisions, assumptions, tradeoffs, risks, and open questions over a longer document that appears complete but hides judgment.
+
+## Recommended Human + Agent Workflow
+
+Use this workflow when helping create an important design document.
+
+### 1. Capture human intent
+
+Start from the human’s rough notes, decisions, constraints, concerns, and open questions.
+
+Important inputs include:
+
+* Problem being solved
+* Scope
+* Proposed direction
+* Key decisions already made
+* Known constraints
+* Controversial points
+* Important tradeoffs
+* Open questions
+* Target audience
+
+The notes can be messy. Do not require polished input before helping.
+
+### 2. Structure the design
+
+Organize the material into a clear design-doc structure:
+
+* Summary
+* Problem
+* Goals and non-goals
+* Requirements and constraints
+* Proposed design
+* Core concepts
+* Main flows
+* Interfaces and contracts
+* Invariants
+* Alternatives
+* Tradeoffs
+* Risks
+* Rollout
+* Open questions
+
+Only include sections that add decision value.
+
+### 3. Mark uncertainty
+
+Where context is missing, label it explicitly.
+
+Use labels such as:
+
+* **Assumption:** Initial traffic is expected to be low.
+* **Open Question:** Should replay be exposed in the UI in v1?
+* **Suggestion:** Consider separating user-visible messages from internal execution traces.
+
+Never hide uncertainty inside confident prose.
+
+### 4. Challenge the draft
+
+Review the draft for design quality, not just writing quality.
+
+Check for:
+
+* Missing decisions
+* Vague requirements
+* Undefined concepts
+* Fake alternatives
+* Hidden assumptions
+* Missing failure paths
+* Missing tradeoffs
+* Missing rollout or migration concerns
+* Generic best-practice filler
+* Premature implementation detail
+
+### 5. Compress and sharpen
+
+After the structure is correct, improve digestibility.
+
+Actions:
+
+* Remove obvious statements
+* Merge repeated context
+* Shorten long explanations
+* Turn vague claims into concrete contracts
+* Move reference details to appendix
+* Keep the main reading path short
+* Make decisions, assumptions, risks, and open questions easy to scan
+
+### 6. Preserve human ownership
+
+The final document should read as if it was written by someone who understands the system and owns the decision.
+
+The agent should improve clarity and completeness, but should not replace human design judgment.
+
+## Drafting From Limited Context
+
+When the user asks for a design document but provides limited context:
+
+1. Produce a useful partial draft or outline.
+2. Clearly label assumptions.
+3. List the most important open questions.
+4. Avoid inventing unsupported details.
+5. Prefer concise placeholders over generic filler.
+
+Good:
+
+> **Assumption:** The first version targets internal users and low traffic. This should be confirmed before finalizing the execution model.
+
+Bad:
+
+> The system will scale horizontally to support enterprise-grade traffic.
+
+## Review Behavior for AI-Written Docs
+
+When reviewing a design document that may have been AI-generated, look especially for:
+
+* Generic sections that sound correct but add little information
+* Vague claims such as “scalable,” “secure,” “maintainable,” or “easy to use”
+* Overly complete templates where every section is filled regardless of relevance
+* Missing real tradeoffs
+* Assumptions stated as facts
+* Repetition across sections
+* Lack of prioritization
+* Too much explanation of common knowledge
+* Lack of clear decision ownership
+
+Recommend removal, compression, or rewriting when content does not improve decision clarity.
+
 ## Default Workflow
 
 When helping with a design document:
 
-1. Identify the decision the document needs to support.
+1. When helping with a design document, first recover the human’s design intent and separate confirmed decisions from assumptions.
 2. Identify the target audience.
 3. Clarify the problem and scope.
 4. Separate goals, requirements, constraints, and implementation details.
@@ -549,6 +727,172 @@ When using this skill:
 Default behavior:
 
 > Preserve necessary information, remove low-value prose, make decisions explicit, and keep the main reading path short.
+
+## Task Mode Routing
+
+When the user asks for help with a design document, infer the task mode from the request and apply the corresponding behavior. The user should not need to repeat detailed prompting instructions.
+
+If the task mode is ambiguous, choose the most useful mode based on the provided material. Prefer useful progress over asking excessive clarification questions.
+
+### Mode: Notes to Outline
+
+Use when the user provides rough notes, ideas, bullets, meeting notes, issue descriptions, or partial context and asks to organize them.
+
+Behavior:
+
+* Organize the notes into a design-doc outline.
+* Do not produce a polished full document yet unless explicitly requested.
+* Separate confirmed information, assumptions, open questions, and agent suggestions.
+* Identify missing context that would materially affect the design.
+* Keep the outline concise and decision-focused.
+* Avoid generic filler.
+
+Output should include:
+
+* Proposed title
+* Target audience, if inferable
+* Decision the doc should support
+* Structured outline
+* Confirmed information
+* Assumptions
+* Open questions
+* Suggested additions or missing areas
+
+### Mode: Draft Design Doc
+
+Use when the user asks to draft, write, or create a design document.
+
+Behavior:
+
+* Start from the user’s provided intent, notes, constraints, and decisions.
+* Produce a structured design document using the default template.
+* Keep the main reading path concise.
+* Do not fill template sections mechanically.
+* Omit sections that do not add decision value.
+* Clearly label assumptions and open questions.
+* Do not invent unsupported requirements.
+* Move excessive detail to appendix when appropriate.
+* Prefer concrete contracts, flows, tradeoffs, and risks over generic best-practice prose.
+
+Output should be a usable first draft, but not pretend to be final if important context is missing.
+
+### Mode: Review Design Doc
+
+Use when the user provides an existing design document and asks for review, critique, feedback, or quality check.
+
+Behavior:
+
+* Review for decision clarity, not just writing quality.
+* Identify major gaps before minor wording issues.
+* Look for vague claims, missing decisions, hidden assumptions, weak alternatives, missing tradeoffs, missing failure paths, and unnecessary detail.
+* Call out sections that should be shortened, removed, merged, or moved to appendix.
+* Distinguish design-substance issues from writing/style issues.
+* Do not rewrite the whole document unless asked.
+
+Output should include:
+
+* Overall assessment
+* Major strengths
+* Major gaps
+* Decision clarity issues
+* Missing or weak sections
+* Suggested cuts or compression
+* Suggested additions
+* Concrete rewrite examples where useful
+
+### Mode: Revise Design Doc
+
+Use when the user asks to improve, rewrite, restructure, or update an existing design document.
+
+Behavior:
+
+* Preserve the user’s design intent and confirmed decisions.
+* Improve structure, clarity, and concision.
+* Make assumptions, constraints, tradeoffs, risks, and open questions explicit.
+* Remove generic filler and repeated explanations.
+* Avoid changing substantive design decisions unless clearly framed as a suggestion.
+* Keep terminology consistent.
+* Keep the document reviewable.
+
+Output should include the revised text or revised sections, plus a brief note summarizing important changes.
+
+### Mode: Compress Design Doc
+
+Use when the user asks to shorten, simplify, make concise, reduce length, or make the document easier to digest.
+
+Behavior:
+
+* Preserve decision-critical content.
+* Remove obvious statements, generic best-practice prose, repeated context, and excessive implementation detail.
+* Merge overlapping sections.
+* Move reference detail to appendix.
+* Keep decisions, assumptions, constraints, tradeoffs, risks, and open questions visible.
+* Do not remove important nuance merely to make the document shorter.
+
+Output should include:
+
+* Compressed version
+* Optional list of removed or moved content
+* Any risks from compression, if important
+
+### Mode: Extract Decisions
+
+Use when the user asks what decisions, assumptions, risks, tradeoffs, or open questions exist in a document or notes.
+
+Behavior:
+
+* Extract the key design decisions.
+* Separate confirmed decisions from assumptions and open questions.
+* Identify tradeoffs and risks.
+* Highlight decisions that appear implied but not explicitly stated.
+* Do not invent decisions.
+
+Output should include:
+
+* Confirmed decisions
+* Assumptions
+* Open questions
+* Tradeoffs
+* Risks
+* Suggested decisions to clarify
+
+### Mode: Split Parent Doc and Sub-Docs
+
+Use when the design is too large, spans multiple components, or the user asks whether to split the document.
+
+Behavior:
+
+* Identify what belongs in the parent design doc.
+* Identify what should move to sub-design docs or appendices.
+* Keep the parent focused on problem, scope, architecture, core decisions, integration points, tradeoffs, rollout, and risks.
+* Move detailed schema, APIs, edge-case matrices, migration scripts, and component internals into sub-docs when appropriate.
+
+Output should include:
+
+* Recommended document structure
+* Parent doc outline
+* Suggested sub-docs
+* What content moves where
+* Rationale for the split
+
+### Mode: Final Review Before Sharing
+
+Use when the user asks whether the design doc is ready for review or sharing.
+
+Behavior:
+
+* Check whether the document is understandable, concise, and decision-focused.
+* Identify blockers that should be fixed before sharing.
+* Identify non-blocking improvements.
+* Check that assumptions and open questions are visible.
+* Check that the summary is strong enough for busy reviewers.
+
+Output should include:
+
+* Ready / not ready assessment
+* Blocking issues
+* Suggested improvements
+* Final review checklist
 
 ## Reference Files
 
