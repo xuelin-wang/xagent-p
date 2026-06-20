@@ -99,3 +99,21 @@ Follow this priority order:
 5. General best practices
 
 If conflict remains, explain the conflict and choose the safest minimal path.
+
+## Skill Improvement Feedback
+
+When using a project skill, notice whether the skill instructions helped or caused friction.
+
+After completing the main task, briefly mention any evidence-based skill improvement only if it would prevent repeated future issues.
+
+Do not automatically edit skills.
+
+When suggesting a skill update, provide:
+
+* The observed issue
+* The proposed change
+* The file to update
+* A concise patch
+* Any risk of overfitting
+
+Only update the skill after explicit user approval.
