@@ -894,6 +894,165 @@ Output should include:
 * Suggested improvements
 * Final review checklist
 
+## Skill Retrospective Mode
+
+Use this mode when the user asks to improve this skill, or when a design-doc task reveals that the skill instructions were incomplete, unclear, too verbose, too generic, or hard to apply.
+
+The agent may inspect the skill content and propose improvements, but must not automatically rewrite the skill unless the user explicitly asks.
+
+### When to Suggest Skill Improvements
+
+Suggest a skill improvement only when there is evidence from the current task, such as:
+
+* The skill produced generic filler.
+* The skill overfilled the template.
+* The skill asked for unnecessary clarification.
+* The skill missed an important design-doc section.
+* The skill failed to distinguish confirmed information from assumptions.
+* The skill did not provide the right task mode.
+* The skill created too much detail instead of a concise main reading path.
+* The user had to repeat instructions that should have been encoded in the skill.
+* A reusable prompt pattern emerged that should become a task mode or rule.
+
+Do not suggest changes just because the skill could be more elaborate.
+
+### Retrospective Output
+
+When proposing skill improvements, output:
+
+1. **Observed issue**
+
+   * What happened in the current task?
+
+2. **Why it matters**
+
+   * How did it reduce design-doc quality, usability, or efficiency?
+
+3. **Proposed skill change**
+
+   * The exact rule, task mode, checklist item, or reference-file update to add.
+
+4. **Where to put it**
+
+   * `SKILL.md`, `references/design-doc-template.md`, `references/review-checklist.md`, or another file.
+
+5. **Risk of the change**
+
+   * Could this make the skill too rigid, too verbose, or overfit to one case?
+
+6. **Patch**
+
+   * Provide a concise copy-paste-ready patch or replacement text.
+
+### Improvement Principles
+
+Keep skill improvements small and evidence-based.
+
+Prefer adding:
+
+* A missing task mode
+* A sharper behavior rule
+* A checklist item
+* A reusable output format
+* A short anti-pattern warning
+
+Avoid adding:
+
+* Long explanations
+* Generic best practices
+* One-off project details
+* Rules that only apply to a single document
+* Instructions that make the skill harder to use
+
+### Human Approval Rule
+
+Skill updates require human approval.
+
+The agent may propose changes, but the user decides whether to apply them.
+
+If editing files directly, show the proposed diff first unless the user explicitly asked to apply the update.
+
+
+## Mode: Conversation to Design State
+
+Use when the user has been discussing a design through back-and-forth conversation and wants to prepare for drafting, updating, or reviewing a design document.
+
+Do not treat the whole conversation as design-doc prose.
+
+Instead, extract the current design state.
+
+Behavior:
+
+* Identify confirmed decisions from the conversation.
+* Identify assumptions that were inferred but not explicitly confirmed.
+* Identify open questions that still need human judgment.
+* Identify rejected, deferred, or superseded options.
+* Identify important tradeoffs and risks.
+* Identify terminology and core concepts that should be used consistently.
+* Identify which design-doc sections are likely affected.
+* Ignore exploratory ideas that were discussed but not adopted.
+* Do not present assumptions as decisions.
+* Do not draft a full design document unless the user asks for one.
+
+Output should include:
+
+### Confirmed Decisions
+
+List decisions explicitly made or clearly accepted by the user.
+
+### Assumptions
+
+List reasonable inferences that need confirmation.
+
+### Open Questions
+
+List unresolved questions that affect the design.
+
+### Deferred or Rejected Options
+
+List options discussed but not chosen, if relevant.
+
+### Tradeoffs and Risks
+
+List important tradeoffs and risks surfaced in the conversation.
+
+### Suggested Document Updates
+
+List design-doc sections that should be created or updated.
+
+### Missing Context
+
+List only the missing context that materially affects the design.
+
+Use this mode before drafting or updating a design document from a long conversation.
+
+
+## Mode: Update Design Doc from Conversation
+
+Use when the user asks to update an existing design document based on recent discussion.
+
+Behavior:
+
+* First extract the design-state changes from the conversation.
+* Distinguish new confirmed decisions from assumptions and suggestions.
+* Identify which document sections should change.
+* Preserve existing content that is still correct.
+* Avoid rewriting unrelated sections.
+* Remove or revise content that is now superseded.
+* Keep the update concise and decision-focused.
+* If important uncertainty remains, update the Open Questions section instead of pretending the decision is final.
+
+Output should include:
+
+1. Summary of changes
+2. Sections updated
+3. Revised text or patch
+4. Assumptions that need confirmation
+5. Open questions that remain
+
+Prefer targeted updates over full rewrites unless the document structure is no longer suitable.
+
+
 ## Reference Files
 
 This skill may include optional reference files under references/.
