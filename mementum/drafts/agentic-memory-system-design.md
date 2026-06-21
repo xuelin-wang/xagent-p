@@ -156,6 +156,7 @@ No layer-skipping is permitted. A fact cannot derive directly from a raw source 
 | `close_validity` | Fact was true but is no longer true (set `valid_to`) |
 | `merge_entity` | Entity resolution: two nodes are the same |
 | `split_entity` | Undo a bad entity merge |
+| `extract_conditional` | When a fact depends on a conversation-scoped assumption that blocks direct promotion, extract a new `global` / `domain` fact with `predicate = conditional_rule` and `object = {antecedent: [...], consequent: {...}}`. The antecedent must be as tight as possible — only predicates strictly necessary for the consequent, not incidental conversational context (e.g. not "user mentioned this in a vehicle diagnostics session"). The original conversation-scoped fact is not promoted; the conditional is a new record linked via `DerivationEdge`. Can be triggered at assertion time (preferred — model has freshest context) or during promotion gate evaluation. |
 
 **`fact_key` construction:** `fact_key` is a deterministic string over `(subject_ref, predicate)` — e.g. `sha256("{subject_ref}|{predicate}")` or a human-readable slug. It is scope-independent: the same claim about the same entity has the same `fact_key` whether conversation-scoped or global. This allows `supersede_fact`, `promote_fact`, and `contradict_fact` to locate the predecessor record by key without a full table scan.
 
@@ -168,12 +169,25 @@ raw source  [conversation-scoped]
   → observation  [conversation-scoped, unit fact]
   → fact assertion  [conversation-scoped]
         ↓  confidence threshold + source-scope check
-  → fact assertion  [global, same subject_type / subject_ref]
+        ├── sources all global
+        │       → promote_fact → fact assertion  [global, same subject_ref]
+        └── sources include conversational assumption
+                ↓  model evaluates abstraction value
+                │  (earliest opportunity: at assertion time)
+                ├── not generalisable → stays conversation-scoped
+                └── generalisable
+                        → extract_conditional
+                          → fact assertion  [global, domain]
+                             predicate: conditional_rule
+                             object: { antecedent: [...], consequent: {...} }
+                             antecedent: tight — only conditions necessary for consequent
+                          (original fact stays conversation-scoped; linked via DerivationEdge)
+  → fact assertion  [global]
         ↓  cross-entity pattern confirmed across many entities
   → fact assertion  [global, domain subject]
 ```
 
-The primary promotion step is trust-level promotion: `conversation` → `global`. Subject reference (what the fact is about) stays the same. A separate, less frequent promotion escalates `subject_type` from `entity` to `domain` when a pattern is confirmed across enough entity-level facts to qualify as fleet-wide knowledge. The promotion policy is a versioned, configurable rule; the initial implementation is a confidence threshold plus a source-scope check.
+The primary promotion step is trust-level promotion: `conversation` → `global`. Subject reference (what the fact is about) stays the same. A separate, less frequent promotion escalates `subject_type` from `entity` to `domain` when a pattern is confirmed across enough entity-level facts to qualify as fleet-wide knowledge. When a fact depends on a conversational assumption that blocks direct promotion, a third path extracts a conditional fact globally — capturing the *pattern* rather than the *conclusion*. The promotion policy is a versioned, configurable rule; the initial implementation is a confidence threshold plus a source-scope check.
 
 ---
 
@@ -301,6 +315,15 @@ agent step action
       derived_from method = deterministic_rule → status = observed
       (status = proposed is only used for unvalidated drafts; never set after validation passes)
   → DerivationEdge links each FactAssertion to its parent Observation(s)
+  → (optional) if fact depends on a conversation-scoped assumption:
+      LLM emits a paired extract_conditional proposal:
+        { predicate: conditional_rule,
+          antecedent: [...],   ← tight: only conditions necessary for consequent
+          consequent: {...} }
+      FactStore.assert_fact() writes the conditional as global / domain,
+        status = proposed, lower confidence than the original
+      DerivationEdge links the conditional back to the conversation-scoped fact
+      (preferred here — model has freshest context; can also occur at promotion time)
   → MemoryIndexRef schedules projection update
 ```
 
@@ -374,6 +397,8 @@ The agent cites evidence from the bundle rather than asserting "memory says."
 - Retrieval index updates (vector, graph, keyword)
 
 **Promotion gate:** A fact assertion is eligible for scope promotion (e.g., `conversation` → `global`) only when its confidence meets the configured threshold for that scope transition, and the promotion evaluator judges that its upstream sources hold true at the target scope. The evaluator traverses the full provenance chain — fact → observation → raw sources — and checks whether any upstream raw source is conversation-scoped (e.g. a user assumption or conversation-local input) that would not hold true outside that conversation. The policy is a versioned rule object; the initial implementation is a confidence threshold per scope transition plus a source-scope check. The policy structure is designed to accommodate richer rules (multi-source agreement, human review flag) in the future without schema changes.
+
+**Conditional extraction at promotion time:** When the gate blocks a fact due to conversation-scoped upstream sources, the consolidation worker checks whether a conditional form was already extracted at assertion time (`status = proposed`). If one exists, the worker confirms or discards it. If none exists, the worker may attempt late conditional extraction using the original fact and its provenance chain. The **tight-condition principle** applies in both cases: the antecedent must contain only predicates strictly necessary for the consequent — not incidental conversational context. A tight antecedent makes the conditional testable against any future entity or context without reference to the original conversation. For example, extracting `IF has_recent_repair(battery) AND has_active_dtc(P0A80) THEN likely_cause = battery_replacement` is valid; including `IF technician_mentioned_this_in_session AND has_recent_repair(battery) AND ...` is not, because the first condition is conversation-specific and not evaluable in a new context.
 
 **Contradiction handling during consolidation:** When two assertions conflict on the same `fact_key` within a scope, the consolidation worker:
 1. Compares confidence values.
@@ -475,6 +500,7 @@ class BlobStore:
 - Subject reference (`subject_type` + `subject_ref`) stays stable during trust-level promotion. Subject type escalation (entity → domain) is a separate promotion path requiring cross-entity confirmation.
 - `current_facts` is always a view over the fact assertions table, never a separately maintained mutable table.
 - Every projection index entry has a corresponding `MemoryIndexRef` record that identifies its backend and embedding model.
+- Conditional facts produced by `extract_conditional` have minimal antecedents: only predicates strictly necessary for the consequent. Incidental conversational context (e.g. session identifiers, speaker identity, turn position) must not appear as antecedent conditions — it would make the conditional unevaluable outside the original conversation.
 
 ---
 
