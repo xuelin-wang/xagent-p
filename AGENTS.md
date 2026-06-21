@@ -16,16 +16,13 @@ For trivial edits, reading all memory is not required. For architectural, cross-
 
 This repository uses a Mementum-style project memory layer under `mementum/`.
 
-Project memory is for:
+Project memory is organized in three tiers:
 
-- architecture decisions
-- design rationale
-- implementation conventions
-- known mistakes and gotchas
-- durable lessons learned
-- current project state
-- open design questions
-- development workflows
+| Location | What goes here |
+|---|---|
+| `mementum/drafts/` | Raw thinking, meeting notes, AI-human back-and-forth, working drafts, proposals under review |
+| `mementum/knowledge/` | Approved, final, maintained design documents |
+| `mementum/memories/` | Short durable lessons and pitfalls (one insight per file) |
 
 Project memory is not for:
 
@@ -37,7 +34,6 @@ Project memory is not for:
 - raw logs
 - runtime application records
 - large generated artifacts
-- temporary scratch notes
 
 ## Memory Update Rule
 

@@ -11,12 +11,14 @@ Use knowledge pages when several memories or discussions have converged into a s
 ```yaml
 ---
 title: Page Title
-status: draft | active | superseded
+status: active | superseded
 category: architecture | design | workflow | policy | testing | security | open-question
 tags: []
 related: []
 ---
 ```
+
+Working drafts and proposals under review belong in `mementum/drafts/`, not here.
 
 ## Maintenance
 
