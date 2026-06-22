@@ -10,9 +10,19 @@ It is intended to help future AI coding agents and human contributors understand
 mementum/
   state.md       # current state, next steps, blockers, recent decisions
   memories/      # short durable observations, one insight per file
-  knowledge/     # longer synthesized project knowledge
+  drafts/        # raw notes, meeting notes, AI-human discussions, proposals under review
+  knowledge/     # approved and maintained design documents
   templates/     # templates for new memory and knowledge files
 ```
+
+## Design Document Lifecycle
+
+| Stage | Location |
+|---|---|
+| Raw thinking, meeting notes, AI-human back-and-forth | `drafts/` |
+| Working draft or proposal under review | `drafts/` |
+| Approved, final, maintained design document | `knowledge/` |
+| Short durable lesson or pitfall | `memories/` |
 
 ## What Belongs Here
 
