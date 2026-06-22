@@ -103,8 +103,8 @@ Conversation-scoped facts are not readable outside their conversation until a ne
 
 | Value | Meaning |
 |---|---|
-| `observed` | Directly read from a source, tool result, or log — no model inference |
-| `inferred` | Derived by model extraction or another inferential process |
+| `observed` | Deterministically extracted from a structured source using a fixed parsing rule — no model judgment required (e.g. reading a named JSON field, applying a known log schema). The value is directly present in the source; the extraction rule is deterministic and not subject to model interpretation. |
+| `inferred` | Extracted by a model or inferential process — including LLM-based extraction from structured sources where identifying the relevant facts, their granularity, or their mapping to subject/predicate/object triples requires model judgment. Most observations from user messages, free-text fields, and semi-structured tool responses are inferred. |
 | `confirmed` | Validated by a corroborating source or human review |
 
 Fact assertions use `assertion_status = proposed | observed | inferred | confirmed`. Terminal lifecycle changes are represented by immutable `FactRelation` rows (`supersedes`, `retracts`, `contradicts`, `corroborates`) rather than updates to the assertion. A numeric `confidence` is one promotion input; model confidence alone never authorizes promotion or contradiction resolution.
@@ -339,9 +339,9 @@ agent step action
       { operation, subject, predicate, object, confidence, derived_from[] }
   → deterministic validator checks each proposal
   → MemoryCommand commits assertions with initial assertion_status:
-      llm_extract without corroboration → inferred
-      deterministic direct extraction   → observed
-      unvalidated conditional draft     → proposed
+      llm_extract (any source)                      → inferred
+      deterministic fixed-schema parser (no model)  → observed
+      unvalidated conditional draft                 → proposed
   → DerivationEdge links each FactAssertion to its parent Observation(s)
   → append audit MemoryEvent referencing committed canonical record IDs
   → append ProjectionOutbox entries for affected canonical records
