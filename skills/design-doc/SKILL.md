@@ -2,7 +2,7 @@
 
 name: design-doc
 description: Draft, review, revise, compress, and structure design documents for large product features, focused feature areas, agent applications, backend systems, and developer tools. Use when the user asks for a design doc, design proposal, architecture doc, technical design review, design-doc outline, or design-doc critique.
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---
 
 # Design Document Skill
 
