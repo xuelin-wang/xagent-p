@@ -145,7 +145,42 @@ Raw sources are scoped at write time. The same content in two different scopes p
 
 Fields: `observation_id`, `tenant_id`, `scope_level`, `conversation_id`, `subject_type`, `subject_ref`, `content`, `derivation_basis`, `known_at`, `hash`, `operation_key`.
 
-Observations are scoped at write time. **Scope inheritance:** an observation always inherits `scope_level` and `conversation_id` from its parent raw source—an observation cannot be less restricted than its source. `subject_type` and `subject_ref` may be set more specifically by the extractor. A conversation-scoped observation is never widened in place; promotion requires a new global observation from independently acceptable evidence or an attributed human review. Provenance—which raw sources the observation was extracted from—is recorded in `DerivationEdge`, not inline.
+Observations are scoped at write time. **Scope inheritance:** an observation always inherits `scope_level` and `conversation_id` from its parent raw source—an observation cannot be less restricted than its source. When an observation derives from multiple raw sources with different scopes, it inherits the most restrictive scope among them. `subject_type` and `subject_ref` may be set more specifically by the extractor. A conversation-scoped observation is never widened in place; promotion requires a new global observation from independently acceptable evidence or an attributed human review. Provenance—which raw sources the observation was extracted from—is recorded in `DerivationEdge`, not inline.
+
+**Unit fact contract.** A valid observation satisfies all of the following:
+
+- **Atomic:** exactly one subject, one predicate, and one value. A sentence connecting two independent claims produces two observations, not one.
+- **Grounded:** directly supported by a span in the raw source. It does not synthesize across sources or add implications not present in the source.
+- **Self-contained:** readable without surrounding message context and still unambiguous.
+- **Preserves source qualifiers:** uncertainty markers ("customer reports", "approximately"), attribution ("technician states"), and temporal expressions ("last week", "since the last repair") are retained as-is in `content`. Resolution of relative times to absolute timestamps is deferred to fact assertion time, not observation extraction time.
+
+**LLM extraction contract.** When `derivation_basis = inferred`, the extractor prompt instructs the model to:
+
+- Emit one item per distinct claim in the source.
+- Not infer causes, implications, or relationships unless explicitly stated in the source text.
+- Use the source's own language for uncertainty and attribution rather than silently dropping qualifiers.
+- Assign `derivation_basis = inferred` to any claim that required semantic interpretation to extract.
+
+The deterministic validator rejects any observation where `content` contains a conjunction of independent claims, or where `subject_ref` cannot be determined from the source.
+
+**Examples** (vehicle diagnostics):
+
+*Source — structured `tool_result`:* `{"dtc": "P0A80", "status": "ACTIVE", "first_seen": "2026-05-10"}`
+
+| Observation | Valid? | Reason |
+|---|---|---|
+| `DTC P0A80 has status ACTIVE` | Yes | One claim, directly from field |
+| `DTC P0A80 was first seen on 2026-05-10` | Yes | One claim, directly from field |
+| `DTC P0A80 is active and was first seen on 2026-05-10` | No | Two claims — split into two observations |
+
+*Source — `user_msg`:* `"Battery was replaced last week. Car has been running rough since then."`
+
+| Observation | Valid? | Reason |
+|---|---|---|
+| `Battery was replaced approximately 7 days ago` | Yes | One claim, temporal marker preserved |
+| `Vehicle has been running rough since the battery replacement` | Yes | One claim, source qualifier preserved |
+| `Battery replacement caused the rough running` | No | Causal inference not stated in source |
+| `There may be an alternator issue` | No | Agent inference — not in source |
 
 **FactAssertion** — the system's interpretation. Versioned, never overwritten in place.
 
