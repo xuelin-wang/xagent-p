@@ -57,7 +57,7 @@ Agents operating over time require bitemporal facts: entity state, configuration
 - Replacing the existing step runtime ledger — the step ledger remains authoritative for execution records; the memory system is a downstream consumer.
 - Managing raw document storage (that stays in GCS/S3).
 - Automatic consolidation triggers — consolidation is on-demand only in v1.
-- Model-generated global conditional rules. V1 may store them as conversation-scoped proposals, but global publication requires independent corroboration or human approval.
+- Model-generated global conditional rules. V1 stores them as conversation-scoped inferred assertions; global publication requires independent corroboration or human approval.
 
 ---
 
@@ -107,7 +107,7 @@ Conversation-scoped facts are not readable outside their conversation until a ne
 | `inferred` | Extracted by a model or inferential process — including LLM-based extraction from structured sources where identifying the relevant facts, their granularity, or their mapping to subject/predicate/object triples requires model judgment. Most observations from user messages, free-text fields, and semi-structured tool responses are inferred. |
 | `confirmed` | Validated by a corroborating source or human review |
 
-Fact assertions use `assertion_status = proposed | observed | inferred | confirmed`. Terminal lifecycle changes are represented by immutable `FactRelation` rows (`supersedes`, `retracts`, `contradicts`, `corroborates`) rather than updates to the assertion. A numeric `confidence` is one promotion input; model confidence alone never authorizes promotion or contradiction resolution.
+Fact assertions use `assertion_status = observed | inferred | confirmed`. Terminal lifecycle changes are represented by immutable `FactRelation` rows (`supersedes`, `retracts`, `contradicts`, `corroborates`) rather than updates to the assertion. A numeric `confidence` is one promotion input; model confidence alone never authorizes promotion or contradiction resolution.
 
 ### Bitemporal Semantics
 
@@ -195,7 +195,7 @@ No layer-skipping is permitted. A fact cannot derive directly from a raw source 
 | `close_validity` | Create a successor assertion with a closed valid-time interval plus `supersedes` |
 | `merge_entity` | Entity resolution: two nodes are the same |
 | `split_entity` | Undo a bad entity merge |
-| `extract_conditional` | Create a conversation-scoped proposed rule linked to its evidence. Global publication is a separate reviewed operation requiring independent global evidence or human approval. |
+| `extract_conditional` | Create a conversation-scoped inferred conditional linked to its evidence. Global publication is a separate reviewed operation requiring independent global evidence or human approval. |
 
 **Fact identity and cardinality:** predicates are registered with `single`, `set`, or `temporal-series` cardinality. For single-valued predicates, `fact_key` is deterministic over `(tenant_id, subject_ref, predicate)`. For set-valued and temporal-series predicates, normalized object identity is included. Contradiction candidates must share a fact key and have overlapping valid-time intervals. Unknown predicates default to set-valued so multiple values are not incorrectly treated as conflicts.
 
@@ -341,7 +341,6 @@ agent step action
   → MemoryCommand commits assertions with initial assertion_status:
       llm_extract (any source)                      → inferred
       deterministic fixed-schema parser (no model)  → observed
-      unvalidated conditional draft                 → proposed
   → DerivationEdge links each FactAssertion to its parent Observation(s)
   → append audit MemoryEvent referencing committed canonical record IDs
   → append ProjectionOutbox entries for affected canonical records
@@ -431,7 +430,7 @@ Task/session summaries used for similarity search are disposable projection docu
 
 **Promotion gate:** A conversation assertion is eligible to seed a separate global assertion only when the evaluator has independent global-scoped corroborating observations or an authorized human approval captured as a global `human_review` observation. Confidence thresholds may reject a candidate but cannot establish global validity. The evaluator records the policy version, evidence IDs, decision, and actor. The new global assertion derives from the global evidence and may be linked to the conversation assertion with `corroborates`; the conversation assertion is not superseded.
 
-**Conditional extraction:** A worker may create a conversation-scoped `proposed` conditional for later review. V1 never publishes such a proposal globally based only on model judgment. Global publication follows the same corroborating-evidence or human-approval rule as other promotions.
+**Conditional extraction:** A worker may create a conversation-scoped `inferred` conditional. V1 never promotes it globally based only on model judgment. Global publication follows the same corroborating-evidence or human-approval rule as other promotions.
 
 **Contradiction handling during consolidation:** Candidates must share a fact key and overlap in valid time. The worker creates a `contradicts` relation and applies the versioned resolution policy. If source authority, confirmation, recency, and confidence do not produce an unambiguous result, both remain disputed. A resolution creates a new assertion and `supersedes`/`corroborates` relations; existing rows remain unchanged.
 
@@ -751,7 +750,7 @@ fact_assertion (
   subject                 text not null,
   predicate               text not null,
   object                  jsonb not null,
-  assertion_status        text not null,  -- proposed, observed, inferred, confirmed
+  assertion_status        text not null,  -- observed, inferred, confirmed
   confidence              numeric,
   valid_from              timestamptz,
   valid_to                timestamptz,
